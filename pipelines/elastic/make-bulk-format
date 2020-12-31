@@ -2,7 +2,15 @@
 for file in *.ndjson
 do 
     if test -f "$file"
-    then
-        curl -H 'Content-Type: application/x-ndjson' -XPOST 'localhost:9200/zq-sample-data/'"${FILE%.*}"'/_bulk?pretty' --data-binary @$file
+    then 	    
+	IFS=$'\n' # make newlines the only separator
+	set -f          # disable globbing
+	id=0
+	for line  in $(cat < "$file"); do
+	    id=$((id+1))
+	    bulkindex='{ "index" : { "_index" : "test", "_type" : "type1", "_id" : "'"$id"'" } }'
+            echo "$bulkindex 
+$line" >> $file.new
+	done
     fi
-done    
+done 
