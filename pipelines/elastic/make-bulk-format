@@ -1,0 +1,16 @@
+#!/bin/bash
+for file in *.ndjson
+do 
+    if test -f "$file"
+    then 	    
+	IFS=$'\n' # make newlines the only separator
+	set -f          # disable globbing
+	id=0
+	for line  in $(cat < "$file"); do
+	    id=$((id+1))
+	    bulkindex='{ "index" : { "_index" : "test", "_type" : "type1", "_id" : "'"$id"'" } }'
+            echo "$bulkindex 
+$line" >> $file.new
+	done
+    fi
+done 

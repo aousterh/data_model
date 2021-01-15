@@ -8,6 +8,12 @@ Sources generate JSON and send it to Kafka. Then search and analytics pipelines 
 ### Search cluster
 
 Elastic Search
+1. Run make-bulk-format in directory with ndjsons
+2. Transfer *.new files to a new directory
+3. Run rename 's/.new//' * or similar command to remove .new extension added by make-bulk-format script
+4. Start elastic search with sudo systemctl start elasticsearch.service or bin/elasticsearch
+5. Verify elastic search is running by running curl -X GET http://localhost:9200/ 
+5. Run bulk-load to load into elastic search
 
 ### Analytics cluster
 
