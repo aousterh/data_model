@@ -1,1 +1,1 @@
-to view parquet file visually: upload parquet file at http://parquet-viewer-online.com/result
+to view parquet file: upload at http://parquet-viewer-online.com/result
