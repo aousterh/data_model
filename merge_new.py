@@ -61,7 +61,6 @@ def merge_schemas(dir_path):
         df_temp = (spark.read
                        .parquet(dir_path + "/" + dir)
                        .selectExpr(convert_columns_to_string(schema))
-                       .withColumn(dir, lit(dir))
                   )
 
         # Convert to JSON to avoid error when union different schemas
@@ -77,9 +76,11 @@ def merge_schemas(dir_path):
 sc = SparkContext('local')
 spark = SparkSession(sc)
 # Read partitions and merge schemas
-data_path = "/home/admin/zq-sample-data/parquet/"
+data_path = "/home/admin/zq-sample-data/parquet"
 df = spark.read.json(merge_schemas(data_path))
 df.printSchema()
+df.show()
+
 
 def get_repartition_factor(dir_size):
     block_size = sc._jsc.hadoopConfiguration().get("dfs.blocksize")
@@ -87,4 +88,4 @@ def get_repartition_factor(dir_size):
     return 1
 #    return math.ceil(int(dir_size)/int(block_size)) # returns 2
 
-df.repartition(get_repartition_factor(217894092)).write.parquet("/home/admin/zq-sample-data/outputs")
+df.write.parquet("/home/admin/zq-sample-data/outputs/merged.parquet")
