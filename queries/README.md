@@ -10,7 +10,9 @@ For these examples, we use some sample data from [Zeek](https://zeek.org/). To e
 
 ## jq
 
-First we try issuing these queries over NDJSON data, using the sed-like tool [`jq`](https://stedolan.github.io/jq/). You can run these queries with `./jq_queries.sh` or by setting NDJSON_PATH=../../zq-sample-data/zeek-ndjson/*.ndjson and executing the queries below.
+First we try issuing these queries over NDJSON data, using the sed-like tool [`jq`](https://stedolan.github.io/jq/). You will need to [download and install `jq`](https://stedolan.github.io/jq/download/) and also unzip the NDJSON data by running `gzip -d *` in the `zq-sample-data/zeek-ndjson` directory.
+
+You can run these queries with `./jq_queries.sh` or by setting `NDJSON_PATH` (`export NDJSON_PATH=../../zq-sample-data/zeek-ndjson/*.ndjson`) and executing the queries below.
 
 ### 1. Analytics query
 
