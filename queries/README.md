@@ -16,21 +16,21 @@ First we try issuing these queries over NDJSON data, which supports schema-less 
 
 You can run these queries with `./jq_queries.sh` or by setting `NDJSON_PATH` (`export NDJSON_PATH=../../zq-sample-data/zeek-ndjson/*.ndjson`) and executing the queries below.
 
-### 1. Analytics query
+#### 1. Analytics query
 
 `jq -c -s 'group_by(."id.orig_h")[] | length as $l | .[0] | .count = $l | {count,"id.orig_h"}' $NDJSON_PATH`
 
 This query is easy to write, but inefficient because it must scan all JSON objects in their entirety until a matching id.orig_h field is found (or the end of the record is reached).
 
 
-### 2. Search query
+#### 2. Search query
 
 `jq -c -s '[ .[] | select(.["id.orig_h"]=="10.128.0.19") ] | sort_by(.ts) | .[:5] | .[]' $NDJSON_PATH`
 
 This query is easy to write. It is inefficient, but you could issue a similar query using an index (e.g., with Elastic Search), and then it would be efficient.
 
 
-### 3. Data discovery query
+#### 3. Data discovery query
 
 `jq -c -s 'group_by(."_path")[] | length as $l | .[0] | .count = $l | {count,"_path"}' $NDJSON_PATH`
 
@@ -41,15 +41,15 @@ In JSON we have no schema information by default, so we use the "_path" field as
 
 Next we try issuing these queries over [Spark](https://spark.apache.org/), using Python. In Spark, data is stored in dataframes, typically with one type of data per dataframe.
 
-### 1. Analytics query
+#### 1. Analytics query
 
 TODO
 
-### 2. Search query
+#### 2. Search query
 
 TODO
 
-### 3. Data discovery query
+#### 3. Data discovery query
 
 TODO
 
@@ -58,7 +58,7 @@ TODO
 
 Next we issue the search query using [Elasticsearch](https://www.elastic.co/) so that we can leverage its indexes for more efficient queries.
 
-### 2. Search query
+#### 2. Search query
 
 TODO
 
@@ -68,21 +68,21 @@ Finally, we issue these queries over [ZNG](https://github.com/brimsec/zq/blob/ma
 
 You can run these queries with `./zng_queries.sh` or by setting `ZNG_PATH` (`export ZNG_PATH=../../zq-sample-data/zng-uncompressed/*.zng`) and executing the queries below.
 
-### 1. Analytics query
+#### 1. Analytics query
 
 `zq -t 'count() by id.orig_h' $ZNG_PATH`
 
-This query is easy to write and will be efficient once we can issue it over the columnar ZST format (this is not yet fully supported, so this query executes less efficiently over ZNG).
+This query is easy to write and will be efficient once we can issue it over the columnar ZST format (this is not yet fully supported, so this query executes less efficiently over ZNG). This is possible because ZNG/ZST data is typed, thereby enabling efficient columnar representations.
 
 
-### 2. Search query
+#### 2. Search query
 
 `zq -t 'id.orig_h=10.128.0.19 | sort ts | head 5' $ZNG_PATH`
 
-This query is easy to write and will execute quickly when using indexes (this just illustrates a simple query over the ZNG, using indexes is a TODO item).
+This query is easy to write and will execute quickly when using indexes (this just illustrates a simple query over the ZNG, using indexes is a TODO item). ZNG can represent heterogeneous records in the same stream, so you don't need to manually construct an uber-schema in order to represent the results of this query.
 
 
-### 3. Data discovery query
+#### 3. Data discovery query
 
 `zq -t 'count() by typeof(.)' $ZNG_PATH`
 
