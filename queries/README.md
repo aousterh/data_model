@@ -7,10 +7,12 @@ To better understand the pros/cons of existing data models and query languages, 
 
 For these examples, we use some sample data from [Zeek](https://zeek.org/). To execute the queries yourself, clone the [zq-sample-data repo](https://github.com/brimsec/zq-sample-data) in the same directory that this repository is in.
 
+We suggest using our public AMI (TODO) because all of these tools are already installed and Elasticsearch has been populated with the sample data.
+
 
 ## jq
 
-First we try issuing these queries over NDJSON data, using the sed-like tool [`jq`](https://stedolan.github.io/jq/). You will need to [download and install `jq`](https://stedolan.github.io/jq/download/) and also unzip the NDJSON data by running `gzip -d *` in the `zq-sample-data/zeek-ndjson` directory.
+First we try issuing these queries over NDJSON data, which supports schema-less heterogeneous data in the same file. We the sed-like tool [`jq`](https://stedolan.github.io/jq/). You will need to [download and install `jq`](https://stedolan.github.io/jq/download/) and also unzip the NDJSON data by running `gzip -d *` in the `zq-sample-data/zeek-ndjson` directory.
 
 You can run these queries with `./jq_queries.sh` or by setting `NDJSON_PATH` (`export NDJSON_PATH=../../zq-sample-data/zeek-ndjson/*.ndjson`) and executing the queries below.
 
@@ -33,6 +35,32 @@ This query is easy to write. It is inefficient, but you could issue a similar qu
 `jq -c -s 'group_by(."_path")[] | length as $l | .[0] | .count = $l | {count,"_path"}' $NDJSON_PATH`
 
 In JSON we have no schema information by default, so we use the "_path" field as a proxy for schema instead. This query is inefficient because we have to scan all records, as in the analytics example above.
+
+
+## Spark
+
+Next we try issuing these queries over [Spark](https://spark.apache.org/), using Python. In Spark, data is stored in dataframes, typically with one type of data per dataframe.
+
+### 1. Analytics query
+
+TODO
+
+### 2. Search query
+
+TODO
+
+### 3. Data discovery query
+
+TODO
+
+
+## Elasticsearch
+
+Next we issue the search query using [Elasticsearch](https://www.elastic.co/) so that we can leverage its indexes for more efficient queries.
+
+### 2. Search query
+
+TODO
 
 
 ## ZNG
