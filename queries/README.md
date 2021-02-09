@@ -66,24 +66,33 @@ TODO
 ## ZNG
 Finally, we issue these queries over [ZNG](https://github.com/brimsec/zq/blob/master/zng/docs/spec.md) data. Follow the instructions [here](https://github.com/brimsec/zq) to install the command line query tool for ZNG, `zq`. As above, you need to unzip the ZNG data by running `gzip -d *` in the `zq-sample-data/zng-uncompressed` directory.
 
-You can run these queries with `./zng_queries.sh` or by setting `ZNG_PATH` (`export ZNG_PATH=../../zq-sample-data/zng-uncompressed/*.zng`) and executing the queries below.
+You can run these queries with `./zng_queries.sh` or by setting `ZNG_UNCOMPRESSED_PATH` (`export ZNG_UNCOMPRESSED_PATH=../../zq-sample-data/zng-uncompressed/*.zng`) and executing the queries below.
 
 #### 1. Analytics query
 
-`zq -t 'count() by id.orig_h' $ZNG_PATH`
+`zq -t 'count() by id.orig_h' $ZNG_UNCOMPRESSED_PATH`
 
 This query is easy to write and will be efficient once we can issue it over the columnar ZST format (this is not yet fully supported, so this query executes less efficiently over ZNG). This is possible because ZNG/ZST data is typed, thereby enabling efficient columnar representations.
 
 
 #### 2. Search query
 
-`zq -t 'id.orig_h=10.128.0.19 | sort ts | head 5' $ZNG_PATH`
+`zq -t 'id.orig_h=10.128.0.19 | sort ts | head 5' $ZNG_UNCOMPRESSED_PATH`
 
-This query is easy to write and will execute quickly when using indexes (this just illustrates a simple query over the ZNG, using indexes is a TODO item). ZNG can represent heterogeneous records in the same stream, so you don't need to manually construct an uber-schema in order to represent the results of this query.
+This query is easy to write because ZNG can represent heterogeneous records in the same stream, so you don't need to manually construct an uber-schema in order to represent the results of this query. However, this query is slow to execute over ZNG, because it must scan all records. Instead, let's build an index for the field `id.orig_h` using the tool `zar` and issue the query over the index (`export ZNG_PATH=../../zq-sample-data/zng/*.gz`).
+
+```
+mkdir logs
+export ZAR_ROOT=`pwd`/logs
+zq $ZNG_PATH | zar import -s 25MB -
+zar index id.orig_h
+zar zq -t 'id.orig_h=10.128.0.19 | sort ts | head 5'
+```
+That query was much faster! And, to keep things simple, zar represents the index itself in ZNG.
 
 
 #### 3. Data discovery query
 
-`zq -t 'count() by typeof(.)' $ZNG_PATH`
+`zq -t 'count() by typeof(.)' $ZNG_UNCOMPRESSED_PATH`
 
 This query returns a stream of (typeof, count) records, where "typeof" is a type and "count" is a uint64. This is possible because the query language supports first-class types (with typeof) and the data model supports first-class types, enabling the resulting ZNG stream to include values that are themselves types.
