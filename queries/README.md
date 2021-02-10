@@ -7,7 +7,7 @@ To better understand the pros/cons of existing data models and query languages, 
 
 For these examples, we use some sample data from [Zeek](https://zeek.org/). To execute the queries yourself, clone the [zq-sample-data repo](https://github.com/brimsec/zq-sample-data) in the same directory that this repository is in.
 
-We suggest using our public AMI (TODO) because all of these tools are already installed and Elasticsearch has been populated with the sample data.
+We suggest using our public AMI (ami-0b1647c06db4be14e) because all of these tools are already installed. Make sure to select an instance type with enough memory for the `jq` queries; we use m5.large.
 
 
 ## jq
@@ -39,7 +39,7 @@ In JSON we have no schema information by default, so we use the "_path" field as
 
 ## Spark (with Scala)
 
-Next we try issuing these queries over [Spark](https://spark.apache.org/), using Scala. In Spark, data is stored in dataframes, typically with one type of data per dataframe. These queries involve more steps to run, so we only summarize the key parts of the code here. To run the full queries yourself, execute:
+Next we try issuing these queries over [Spark](https://spark.apache.org/), using Scala. In Spark, data is stored in dataframes, typically with one type of data per dataframe. These queries involve more steps to run, so we only summarize the key parts of the code here. To run the full queries yourself, download Spark in the same directory as this repository (or use our public AMI which has Spark set up already) and execute:
 
 `../../spark/bin/spark-shell -i spark_queries.scala`
 
