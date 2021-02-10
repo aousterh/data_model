@@ -37,19 +37,59 @@ This query is easy to write. It is inefficient, but you could issue a similar qu
 In JSON we have no schema information by default, so we use the "_path" field as a proxy for schema instead. This query is inefficient because we have to scan all records, as in the analytics example above.
 
 
-## Spark
+## Spark (with Scala)
 
-Next we try issuing these queries over [Spark](https://spark.apache.org/), using Python. In Spark, data is stored in dataframes, typically with one type of data per dataframe.
+Next we try issuing these queries over [Spark](https://spark.apache.org/), using Scala. In Spark, data is stored in dataframes, typically with one type of data per dataframe. These queries involve more steps to run, so we only summarize the key parts of the code here. To run the full queries yourself, execute:
+
+`../../spark/bin/spark-shell -i spark_queries.scala`
 
 #### 1. Analytics query
 
-TODO
+```
+val matching_dfs = for {
+    df <- dfs
+    if df.columns.contains("id.orig_h")
+} yield df
+
+matching_dfs.map(df => df.select("`id.orig_h`")).reduce(_.union(_)).groupBy("`id.orig_h`").count().show()
+```
+In this query, we assume an array of dataframes, `df`, with one dataframe per schema of data. We first enumerate the dataframes that contain the `id.orig_h` column, then union the `id.orig_h` column from these dataframes and execute the query. This query is pretty easy to write and is much more efficient than the JSON, because (1) we skipped dataframes that didn't include the `id.orig_h` column and (2) the select could quickly extract all `id.orig_h` fields, leveraging the columnar format (which requires schema information).
 
 #### 2. Search query
 
-TODO
+```
+val all_columns = renamed_dfs.map(df => df.columns.toSet).reduce(_ ++ _)
+
+def customSelect(availableCols: Set[String], requiredCols: Set[String]) = {
+    requiredCols.toList.map(column => column match {
+        case column if availableCols.contains(column) => col(column)
+        case _ => lit(null).as(column)
+    })
+}
+
+renamed_dfs.map(df => df.select(customSelect(df.columns.toSet, all_columns):_*)
+    .filter(col("id_orig_h") === "10.128.0.19"))
+    .reduce(_.union(_))
+    .orderBy("ts")
+    .limit(5)
+    .toDF()
+    .show()
+```
+This query was much harder to execute! First, we had to rename some columns that contained "." in them to avoid Spark errors (not shown). Spark is schema-rigid, so it doesn't let you process different schemas together. As a result, we next had to create an "uber schema" (`all_columns`) that contains all columns across all dataframes, so that we could pretend that this data all has the same schema. Then we had to fill in null values for missing columns (with the `customSelect` function). This query is probably also inefficient, because without indexes, Spark has to search the columns, and then reconstruct records from columnar data.
+
 
 #### 3. Data discovery query
+
+`dfs.map(df => (df.schema, df.count))`
+
+The query above successfully returns an array of (schema, count) tuples. However, what if we wanted to put these results in a dataframe, with column names "schema" and "count", as we have with all other Spark query results so far?
+
+`dfs.map(df => (df.schema, df.count)).toSeq.toDF("schema", "count")`
+
+Unfortunately this throws a `scala.MatchError`, because you can't store schemas in Spark dataframes themselves. So, whenever you want to issue a query that returns a schema or type, you have to represent it using a different data structure (not a dataframe).
+
+
+## Spark (with Python)
 
 TODO
 
