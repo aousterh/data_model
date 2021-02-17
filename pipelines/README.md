@@ -19,6 +19,20 @@ Elastic Search
 
 Spark over Parquet files
 
+Here are the steps from the dataset to running queries:
+
+convert ndjson to parquet
+run cd data_model/pipelines/spark at root directory
+run python3 ndj2par.py will produce all parquet files in data_model/parquet
+
+create merged data frame
+run cd data_model/pipelines/sparkto get to spark pipeline directory
+run python3 merge_via_json.pywill produce a merged dataframe written in parquet format in data_model/merged
+
+run spark queries over merged data frames
+run cd data_model/queries to get to the queries directory
+run python3 spark_queries.py to issue queries
+
 ## Rigid Schema
 
 ## ZNG/ZST
