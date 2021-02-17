@@ -4,12 +4,13 @@ from pyspark.sql.session import SparkSession
 import pyspark
 import os
 
-parquet_path = "../../data-samples/parquet"
+parquet_path = "../parquet"
+merged_df_path = '../merged'
+
 sc = SparkContext('local')
 sqlContext = SQLContext(sc)
 spark = SparkSession.builder.master("local[1]").getOrCreate()
 
-merged_df_path = '../../zq-sample-data/outputs/merged'
 # to read merged parquet file as a df
 df = sqlContext.read.parquet(merged_df_path)
 
