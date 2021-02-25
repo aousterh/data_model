@@ -20,7 +20,7 @@ printf "find all records with IP 10.128.0.19, sort by timestamp, and return the 
 curl -X GET "localhost:9200/test/_search?pretty" -H 'Content-Type: application/json' -d'
 {
   "size": 5,
-  "sort" : ["ts" ],
+  "sort" : [{"ts" : {"order": "asc" }}],
   "query" : {
     "term" : { "id.orig_h" : "10.128.0.19" }
   }
