@@ -103,6 +103,7 @@ def main():
 
     benchmark(analytics, dfs, num_iter=3)
     benchmark(search, dfs, num_iter=3)
+    benchmark(search_concat, dfs, num_iter=3)
     benchmark(discovery, dfs, num_iter=3)
 
 
