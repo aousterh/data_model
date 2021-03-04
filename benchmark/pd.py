@@ -3,22 +3,9 @@ import time
 import numpy as np
 import pandas as pd
 import copy
-
-
-def timed(method):
-    def timeit(*args, **kw):
-        ts = time.time()
-        result = method(*args, **kw)
-        te = time.time()
-        if 'log_time' in kw:
-            name = kw.get('log_name', method.__name__.upper())
-            kw['log_time'][name] = int((te - ts) * 1000)
-        else:
-            print('%r  %2.2f s' % (method.__name__, (te - ts) * 1))
-        return result
-
-    return timeit
-
+from resource import getrusage as resource_usage, RUSAGE_SELF
+from time import time as timestamp
+from collections import defaultdict
 
 files = ["../../zq-sample-data/zeek-ndjson/" + i
          for i in ["conn.ndjson",
@@ -34,7 +21,26 @@ files = ["../../zq-sample-data/zeek-ndjson/" + i
          ]
 
 
-@timed
+def unix_time(function, *args, **kwargs):
+    '''Return `real`, `sys` and `user` elapsed time, like UNIX's command `time`
+    You can calculate the amount of used CPU-time used by your
+    function/callable by summing `user` and `sys`. `real` is just like the wall
+    clock.
+    Note that `sys` and `user`'s resolutions are limited by the resolution of
+    the operating system's software clock (check `man 7 time` for more
+    details).
+    '''
+    start_time, start_resources = timestamp(), resource_usage(RUSAGE_SELF)
+    r = function(*args, **kwargs)
+    end_resources, end_time = resource_usage(RUSAGE_SELF), timestamp()
+
+    return {'return': r,
+            'real': end_time - start_time,
+            'sys': end_resources.ru_stime - start_resources.ru_stime,
+            'user': end_resources.ru_utime - start_resources.ru_utime}
+
+
+# TBD time load()
 def load():
     return [pd.read_json(f, lines=True) for f in files]
 
@@ -72,27 +78,32 @@ def discovery(dfs):
         _, _ = df.dtypes, len(df)
 
 
-def benchmark(fn, num_iter=10):
-    qcts = list()
+def benchmark(fn, dfs, num_iter=10):
+    _real, _sys, _user = list(), list(), list()
     for _ in range(num_iter):
         _dfs = copy.deepcopy(dfs)
-        start = time.time()
-        fn(_dfs)
-        qcts.append(time.time() - start)
-    print(f"{fn.__name__},{round(np.mean(qcts), 5)},{round(np.std(qcts), 5)}")
+        t = unix_time(fn, dfs=_dfs)
+        _real.append(t["real"])
+        _sys.append(t["sys"])
+        _user.append(t["user"])
+
+    print(f"{fn.__name__},"
+          f"{round(np.mean(_real), 5)},"
+          f"{round(np.mean(_user), 5)},"
+          f"{round(np.mean(_sys), 5)}")
 
 
 def main():
     # TBD use sys.argv[0] for num_iter or dataset
-    global dfs
     print("loading..")
-    dfs = load()
+    dfs = unix_time(load)["return"]
 
-    print("mean, std")
-    print("---------")
-    benchmark(analytics, num_iter=3)
-    benchmark(search, num_iter=3)
-    benchmark(discovery, num_iter=3)
+    print("name,real,user,sys")
+    print("------------------")
+
+    benchmark(analytics, dfs, num_iter=3)
+    benchmark(search, dfs, num_iter=3)
+    benchmark(discovery, dfs, num_iter=3)
 
 
 if __name__ == '__main__':
