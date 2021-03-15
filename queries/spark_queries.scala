@@ -1,4 +1,5 @@
 import java.io.File
+import org.apache.spark.sql.DataFrame
 
 val NDJSON_PATH = "../../zq-sample-data/zeek-ndjson/"
 
@@ -62,14 +63,14 @@ val renamed_dfs = for {
 // create the uber schema
 val all_columns = renamed_dfs.map(df => df.columns.toSet).reduce(_ ++ _)
 
-def customSelect(availableCols: Set[String], requiredCols: Set[String]) = {
-    requiredCols.toList.map(column => column match {
-        case column if availableCols.contains(column) => col(column)
+def customSelect(df: DataFrame) = {
+    all_columns.toList.map(column => column match {
+        case column if df.columns.contains(column) => col(column)
         case _ => lit(null).as(column)
     })
 }
 
-val search_df = renamed_dfs.map(df => df.select(customSelect(df.columns.toSet, all_columns):_*)
+val search_df = renamed_dfs.map(df => df.select(customSelect(df):_*)
     .filter(col("id_orig_h") === "10.128.0.19"))
     .reduce(_.union(_))
     .orderBy("ts")

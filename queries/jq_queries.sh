@@ -5,7 +5,7 @@ NDJSON_PATH=../../zq-sample-data/zeek-ndjson/*.ndjson
 
 printf "Analytics query\n"
 printf "count total number of records with each distinct source IP\n"
-jq -c -s 'group_by(."id.orig_h")[] | length as $l | .[0] | .count = $l | {count,"id.orig_h"}' $NDJSON_PATH
+jq -c -s 'group_by(."id.orig_h")[] | {"count": length, "id.orig_h": .[0]."id.orig_h"}' $NDJSON_PATH
 
 printf "\nSearch query\n"
 printf "find all records with IP 10.128.0.19, sort by timestamp, and return the first 5\n"
