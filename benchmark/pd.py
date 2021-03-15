@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-import time
-import numpy as np
 import pandas as pd
 import copy
-from resource import getrusage as resource_usage, RUSAGE_SELF
-from time import time as timestamp
 from collections import defaultdict
+from util import benchmark, unix_time
 
 files = ["../../zq-sample-data/zeek-ndjson/" + i
          for i in ["conn.ndjson",
@@ -20,29 +17,14 @@ files = ["../../zq-sample-data/zeek-ndjson/" + i
                    "smtp.ndjson"]
          ]
 
-
-def unix_time(function, *args, **kwargs):
-    '''Return `real`, `sys` and `user` elapsed time, like UNIX's command `time`
-    You can calculate the amount of used CPU-time used by your
-    function/callable by summing `user` and `sys`. `real` is just like the wall
-    clock.
-    Note that `sys` and `user`'s resolutions are limited by the resolution of
-    the operating system's software clock (check `man 7 time` for more
-    details).
-    '''
-    start_time, start_resources = timestamp(), resource_usage(RUSAGE_SELF)
-    r = function(*args, **kwargs)
-    end_resources, end_time = resource_usage(RUSAGE_SELF), timestamp()
-
-    return {'return': r,
-            'real': end_time - start_time,
-            'sys': end_resources.ru_stime - start_resources.ru_stime,
-            'user': end_resources.ru_utime - start_resources.ru_utime}
-
-
 # TBD time load()
 def load():
     return [pd.read_json(f, lines=True) for f in files]
+
+
+def init_pd(dfs):
+    _dfs = copy.deepcopy(dfs)
+    return ([_dfs], {})
 
 
 def analytics(dfs):
@@ -77,22 +59,6 @@ def discovery(dfs):
     for df in dfs:
         _, _ = df.dtypes, len(df)
 
-
-def benchmark(fn, dfs, num_iter=10):
-    _real, _sys, _user = list(), list(), list()
-    for _ in range(num_iter):
-        _dfs = copy.deepcopy(dfs)
-        t = unix_time(fn, dfs=_dfs)
-        _real.append(t["real"])
-        _sys.append(t["sys"])
-        _user.append(t["user"])
-
-    print(f"{fn.__name__},"
-          f"{round(np.mean(_real), 5)},"
-          f"{round(np.mean(_user), 5)},"
-          f"{round(np.mean(_sys), 5)}")
-
-
 def main():
     # TBD use sys.argv[0] for num_iter or dataset
     print("loading..")
@@ -101,10 +67,10 @@ def main():
     print("name,real,user,sys")
     print("------------------")
 
-    benchmark(analytics, dfs, num_iter=3)
-    benchmark(search, dfs, num_iter=3)
-    benchmark(search_concat, dfs, num_iter=3)
-    benchmark(discovery, dfs, num_iter=3)
+    benchmark(analytics, init_pd, dfs, num_iter=3)
+    benchmark(search, init_pd, dfs, num_iter=3)
+    benchmark(search_concat, init_pd, dfs, num_iter=3)
+    benchmark(discovery, init_pd, dfs, num_iter=3)
 
 
 if __name__ == '__main__':
