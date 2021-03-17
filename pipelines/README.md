@@ -22,6 +22,7 @@ Spark over Parquet files
 Here are the steps from the dataset to running queries:
 
 1. convert ndjson to parquet
+- install the conversion library by running `pip install json2parquet`
 - run `cd data_model/pipelines/spark` at root directory. 
 - run `python3 ndj2par.py` will produce all parquet files in data_model/parquet. 
 

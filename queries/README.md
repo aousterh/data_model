@@ -18,7 +18,7 @@ You can run these queries with `./jq_queries.sh` or by setting `NDJSON_PATH` (`e
 
 #### 1. Analytics query
 
-`jq -c -s 'group_by(."id.orig_h")[] | length as $l | .[0] | .count = $l | {count,"id.orig_h"}' $NDJSON_PATH`
+`jq -c -s 'group_by(."id.orig_h")[] | {"count": length, "id.orig_h": .[0]."id.orig_h"}' $NDJSON_PATH`
 
 This query is easy to write, but inefficient because it must scan all JSON objects in their entirety until a matching id.orig_h field is found (or the end of the record is reached).
 
@@ -32,7 +32,7 @@ This query is easy to write. It is inefficient, but you could issue a similar qu
 
 #### 3. Data discovery query
 
-`jq -c -s 'group_by(."_path")[] | length as $l | .[0] | .count = $l | {count,"_path"}' $NDJSON_PATH`
+`jq -c -s 'group_by(."_path")[] | {"count": length, "_path": .[0]."_path"}' $NDJSON_PATH`
 
 In JSON we have no schema information by default, so we use the "_path" field as a proxy for schema instead. This query is inefficient because we have to scan all records, as in the analytics example above.
 
