@@ -13,4 +13,4 @@ jq -c -s '[ .[] | select(.["id.orig_h"]=="10.128.0.19") ] | sort_by(.ts) | .[:5]
 
 printf "\nData discovery query\n"
 printf "count the number of records with each different schema\n"
-jq -c -s 'group_by(."_path")[] | length as $l | .[0] | .count = $l | {count,"_path"}' $NDJSON_PATH
+jq -c -s 'group_by(."_path")[] | {"count": length, "_path": .[0]."_path"}' $NDJSON_PATH
