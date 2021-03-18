@@ -14,9 +14,9 @@ Notes:
 | `pandas` | `search` | dataframe | rows | 1.15409 | 1.15203 | 0.00147 |
 | `pandas` | `search w/ concat` | dataframe | dataframe | 4.55423 | 3.92687 | 0.62559 |
 | `pandas` | `discovery` | dataframe | dataframe | 0.0015 | 0.00149 | 0.00001 |
-| `spark` | `analytics` | dataframe | dataframe | 6.24149 | 0.00267| 0.00133 |
-| `spark` | `search` | dataframe | dataframe | 34.93111 | 0.004 | 0.00133 |
-| `spark` | `discovery` | dataframe | dataframe | 6.45012 | 0.052 | 0.004 |
+| `spark` | `analytics` | parquet | dataframe | 6.24149 | 0.00267| 0.00133 |
+| `spark` | `search` | parquet | dataframe | 34.93111 | 0.004 | 0.00133 |
+| `spark` | `discovery` | parquet | dataframe | 6.45012 | 0.052 | 0.004 |
 | `zq` | `analytics` | zng | zng | 2.27 | 3.74 | 0.09 |
 | `zq` | `search` | zng | zng | 2.04 | 3.37 | 0.13 |
 | `zq` | `discovery` | zng | zng | 2.23 | 3.67 | 0.10 |
