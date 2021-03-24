@@ -28,15 +28,19 @@ def unix_time_bash(cmd):
     '''Executes and times the command in bash.'''
 
     escaped_cmd = cmd.replace("'", "'\\''")
-    completed = subprocess.run("bash -c 'time -p {}'".format(escaped_cmd), shell=True,
-                               capture_output=True, text=True)
+    completed = subprocess.run("bash -c 'time -p {}'".format(escaped_cmd),
+                               shell=True, text=True, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.PIPE)
 
-    m = re.search(r"real (.*)\nuser (.*)\nsys (.*)\n", completed.stderr)
-    return {'return': completed.stdout,
-            'real': float(m.group(1)),
+    m = re.match(r"real (.*)\nuser (.*)\nsys (.*)\n", completed.stderr)
+    if m == None:
+        print("Command threw error: " + completed.stderr)
+        return {}
+
+    return {'real': float(m.group(1)),
             'user': float(m.group(2)),
             'sys': float(m.group(3))
-        }
+    }
 
 def benchmark(fn, init_fn, *init_args, num_iter=10, **init_kwargs):
     '''Benchmarks fn a specified number of times (num_iter). Calls init_fn
@@ -71,7 +75,7 @@ def benchmark_bash(cmd, num_iter=10):
         _sys.append(t["sys"])
         _user.append(t["user"])
 
-    print(f"{cmd},"
-          f"{round(np.mean(_real), 5)},"
-          f"{round(np.mean(_user), 5)},"
-          f"{round(np.mean(_sys), 5)}")
+    return {'real': round(np.mean(_real), 5),
+            'user': round(np.mean(_user), 5),
+            'sys': round(np.mean(_sys), 5)
+    }

@@ -3,7 +3,6 @@ from util import benchmark_bash
 
 # assume volume is mounted at /zq-sample-data
 BASE_DIR = "/zq-sample-data"
-DATA = BASE_DIR + "/z"
 DATA_NDJSON = BASE_DIR + "/ndjson/zeek-ndjson"
 DATA_NDJSON_NESTED = BASE_DIR + "/ndjson-nested"
 
@@ -24,11 +23,15 @@ def main():
 
     print("ndjson flat")
     for q in all_queries:
-        benchmark_bash(jq_query.format(DATA_NDJSON + "/*.gz", q))
+        results = benchmark_bash(jq_query.format(DATA_NDJSON + "/*.gz", q))
+        fields = [q, results["real"], results["user"], results["sys"]]
+        print(",".join([str(x) for x in fields]))
 
     print("ndjson nested")
     for q in all_queries:
-        benchmark_bash(jq_query.format(DATA_NDJSON_NESTED + "/*.gz", q))
+        results = benchmark_bash(jq_query.format(DATA_NDJSON_NESTED + "/*.gz", q))
+        fields = [q, results["real"], results["user"], results["sys"]]
+        print(",".join([str(x) for x in fields]))
 
 if __name__ == '__main__':
     main()
