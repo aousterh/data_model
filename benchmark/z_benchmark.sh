@@ -38,6 +38,8 @@ declare -a MARKDOWNS=(
 #    '05_only_id_resp_h.md'
     '06_search_top_5.md'
     '07_count_by_type.md'
+    '08_search.md'
+    '09_search_sort.md'
 )
 
 declare -a DESCRIPTIONS=(
@@ -48,6 +50,8 @@ declare -a DESCRIPTIONS=(
 #    'Output all events with the field `id.resp_h` set to `52.85.83.116`'
     'Top 5 events with `id.orig_h` set to `10.128.0.19`'
     'Count all events, grouped by type'
+    'All events with `id.orig_h` set to `10.128.0.19`'
+    'All events with `id.orig_h` set to `10.128.0.19`, sorted'
 )
 
 declare -a ZQL_QUERIES=(
@@ -58,6 +62,8 @@ declare -a ZQL_QUERIES=(
 #    'id.resp_h=52.85.83.116'
     'id.orig_h=10.128.0.19 | sort ts | head 5'
     'count() by typeof(.)'
+    'id.orig_h=10.128.0.19'
+    'id.orig_h=10.128.0.19 | sort ts'
 )
 
 declare -a JQ_FILTERS=(
@@ -68,6 +74,8 @@ declare -a JQ_FILTERS=(
 #    '. | select(.["id.resp_h"]=="52.85.83.116")'
     '[ .[] | select(.["id.orig_h"]=="10.128.0.19") ] | sort_by(.ts) | .[:5] | .[]'
     'group_by(."_path")[] | {"count": length, "_path": .[0]."_path"}'
+    '[ .[] | select(.["id.orig_h"]=="10.128.0.19") ] | .[]'
+    '[ .[] | select(.["id.orig_h"]=="10.128.0.19") ] | sort_by(.ts) | .[]'
 )
 
 declare -a JQFLAGS=(
@@ -76,6 +84,8 @@ declare -a JQFLAGS=(
 #    '-c -s'
     '-c -s'
 #    '-c'
+    '-c -s'
+    '-c -s'
     '-c -s'
     '-c -s'
 )

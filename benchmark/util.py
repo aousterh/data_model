@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import time
 import numpy as np
+import re
 from resource import getrusage as resource_usage, RUSAGE_SELF
+import subprocess
 from time import time as timestamp
 
 def unix_time(function, *args, **kwargs):
@@ -21,6 +23,24 @@ def unix_time(function, *args, **kwargs):
             'real': end_time - start_time,
             'sys': end_resources.ru_stime - start_resources.ru_stime,
             'user': end_resources.ru_utime - start_resources.ru_utime}
+
+def unix_time_bash(cmd):
+    '''Executes and times the command in bash.'''
+
+    escaped_cmd = cmd.replace("'", "'\\''")
+    completed = subprocess.run("bash -c 'time -p {}'".format(escaped_cmd),
+                               shell=True, text=True, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.PIPE)
+
+    m = re.match(r"real (.*)\nuser (.*)\nsys (.*)\n", completed.stderr)
+    if m == None:
+        print("Command threw error: " + completed.stderr)
+        return {}
+
+    return {'real': float(m.group(1)),
+            'user': float(m.group(2)),
+            'sys': float(m.group(3))
+    }
 
 def benchmark(fn, init_fn, *init_args, num_iter=10, **init_kwargs):
     '''Benchmarks fn a specified number of times (num_iter). Calls init_fn
@@ -44,3 +64,18 @@ def benchmark(fn, init_fn, *init_args, num_iter=10, **init_kwargs):
           f"{round(np.mean(_real), 5)},"
           f"{round(np.mean(_user), 5)},"
           f"{round(np.mean(_sys), 5)}")
+
+def benchmark_bash(cmd, num_iter=10):
+    '''Benchmarks a bash command a specified number of times (num_iter).'''
+
+    _real, _sys, _user = list(), list(), list()
+    for _ in range(num_iter):
+        t = unix_time_bash(cmd)
+        _real.append(t["real"])
+        _sys.append(t["sys"])
+        _user.append(t["user"])
+
+    return {'real': round(np.mean(_real), 5),
+            'user': round(np.mean(_user), 5),
+            'sys': round(np.mean(_sys), 5)
+    }
