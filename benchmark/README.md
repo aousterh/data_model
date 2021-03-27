@@ -23,3 +23,6 @@ Notes:
 | `jq` | `analytics` | ndjson | ndjson | 35.28 | 36.50 | 2.72 |
 | `jq` | `search` | ndjson | ndjson | 26.09 | 27.48 | 2.61 |
 | `jq` | `discovery` | ndjson | ndjson | 32.59 | 33.76 | 2.80 |
+| `elastic search` | `search: find` | ndjson | elastic index | 12 | n/a | n/a |
+| `elastic search` | `search: find and sort` | ndjson | elastic index | 34 | n/a | n/a |
+| `elastic search` | `search: find, sort, return top n` | ndjson | elastic index | 7 | n/a | n/a |
