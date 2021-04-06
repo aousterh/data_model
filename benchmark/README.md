@@ -1,6 +1,8 @@
 Benchmark
 ==
 
+## Query runtime
+
 The values are averages across 10 runs and in seconds.
 
 Notes:
@@ -27,3 +29,26 @@ Notes:
 | `jq` | `search + sort` | comp. ndjson | ndjson | 26.47 | 27.72 | 2.90 |
 | `jq` | `search + sort + top 5` | comp. ndjson | ndjson | 26.25 | 27.50 | 2.92 |
 | `jq` | `discovery` | comp. ndjson | ndjson | 32.94 | 34.07 | 3.02 |
+
+
+## Dataset sizes
+
+Notes:
+* Obtained using `ls -l <file_path> | awk '{sum+=$5;} END {print sum/(1024*1024);}'` unless stated otherwise
+* 1 MiB = 1024*1024 bytes
+
+### zq-sample-data
+|**<br>Format**|**<br>Size (MiB)**|
+|:------------:|:----------:|
+| Zeek NDJSON | 613 |
+| nested NDJSON | 613 |
+| ZSON | TODO |
+| ZNG | 71 |
+| ZNG uncompressed | 167 |
+| ZST | 159 |
+| Zeek NDJSON, gzipped | 59 |
+| nested NDJSON, gzipped | 62 |
+| ZSON, gzipped | TODO |
+| ZNG, gzipped | 51 |
+| ZNG uncompressed, gzipped | 46 |
+| ZST, gzipped | 37 |
