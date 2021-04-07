@@ -52,3 +52,7 @@ Notes:
 | ZNG, gzipped | 51 |
 | ZNG uncompressed, gzipped | 46 |
 | ZST, gzipped | 37 |
+| Parquet, unmerged | 61.2199 |
+| Parquet, merged | 59.9762 |
+
+
