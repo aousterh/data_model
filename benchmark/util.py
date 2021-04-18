@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import time
 import numpy as np
+import os
 import re
 from resource import getrusage as resource_usage, RUSAGE_SELF
 import subprocess
@@ -70,6 +71,7 @@ def benchmark_bash(cmd, num_iter=10):
 
     _real, _sys, _user = list(), list(), list()
     for _ in range(num_iter):
+        flush_buffer_cache()
         t = unix_time_bash(cmd)
         _real.append(t["real"])
         _sys.append(t["sys"])
@@ -79,3 +81,7 @@ def benchmark_bash(cmd, num_iter=10):
             'user': round(np.mean(_user), 5),
             'sys': round(np.mean(_sys), 5)
     }
+
+def flush_buffer_cache():
+    '''Flush the file buffer cache.'''
+    os.system("sudo ./flush_cache.sh")
