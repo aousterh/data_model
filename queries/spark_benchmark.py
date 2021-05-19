@@ -14,8 +14,8 @@ import sys
 import time
 from statistics import mean
 
-merged_df_path = '/home/admin/zq-sample-data/outputs/merged'
-parquet_path = '/home/admin/zq-sample-data/parquet'
+merged_df_path = "../merged"
+parquet_path = "../parquet"
 
 #conf = SparkConf().set("spark.executor.memory","2g").set("spark.driver.memory","2g").setMaster("local")
 #sc = SparkContext("local")
