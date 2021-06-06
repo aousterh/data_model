@@ -3,6 +3,6 @@ for file in *.ndjson
 do 
     if test -f "$file"
     then
-        curl -H 'Content-Type: application/x-ndjson' -XPOST 'localhost:9200/zq-sample-data/'"${FILE%.*}"'/_bulk?pretty' --data-binary @$file
+        curl -H 'Content-Type: application/x-ndjson' -XPOST 'localhost:9200/test/'"${file%.*}"'/_bulk?pretty' --data-binary @$file
     fi
 done    

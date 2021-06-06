@@ -5,10 +5,11 @@ from pyspark.context import SparkContext
 from pyspark.sql.session import SparkSession
 # running this script merges multiple parquet files into a single json dataframe, of which the schema is written to ../../merged in the parquet format
 
-def merge_schemas(dir_path):
+def merge_schemas(dir_path, spark):
     """
     Input: 
     - dir_path: Entity path containing partitions.
+    - spark: Spark Session to use
    
     Output: JSON RDD
     Returns a JSON RDD containing the union of all partitions with columns converted to String.
@@ -41,11 +42,12 @@ def merge_schemas(dir_path):
 
     return rdd_json
 
-sc = SparkContext('local')
-spark = SparkSession(sc)
+if __name__ == '__main__':
+    sc = SparkContext('local')
+    spark = SparkSession(sc)
 
-parquet_files_path = "../../parquet"
-df = spark.read.json(merge_schemas(parquet_files_path))
-df.printSchema()
+    parquet_files_path = "../../parquet"
+    df = spark.read.json(merge_schemas(parquet_files_path, spark))
+    df.printSchema()
 
-df.write.parquet("../../merged")
+    df.write.parquet("../../merged")

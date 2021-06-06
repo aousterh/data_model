@@ -9,7 +9,7 @@ do
 	set -f          # disable globbing
 	for line  in $(cat < "$file"); do
 	    id=$((id+1))
-	    bulkindex='{ "index" : { "_index" : "test", "_type" : "type1", "_id" : "'"$id"'" } }'
+	    bulkindex='{ "index" : { "_index" : "'"${file%.*}"'", "_type" : "type1", "_id" : "'"$id"'" } }'
             echo "$bulkindex 
 $line" >> ../bulk-format/${file%.*}-bulkformat.ndjson
 	done
