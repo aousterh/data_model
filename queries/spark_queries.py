@@ -18,7 +18,6 @@ print("Analytics query")
 print("count total number of records with each distinct source IP")
 df.groupBy("`id.orig_h`").count().show(df.count(), False)
 
-
 print("Search query")
 print("find all records with IP 10.128.19, sort by timestamp and return top 5")
 df.createOrReplaceTempView("MERGED")
