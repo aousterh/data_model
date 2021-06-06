@@ -3,8 +3,6 @@ from pyspark.context import SparkContext
 from pyspark.sql.session import SparkSession
 import pyspark
 import os
-from pyspark.sql.functions import desc
-
 
 parquet_path = "../parquet"
 merged_df_path = '../merged'
@@ -18,8 +16,7 @@ df = sqlContext.read.parquet(merged_df_path)
 
 print("Analytics query")
 print("count total number of records with each distinct source IP")
-#df.groupBy("`id.orig_h`").count().show(df.count(), False)
-#df.groupBy("_path").count().sort(desc("count")).show(df.count(),False)
+df.groupBy("`id.orig_h`").count().show(df.count(), False)
 
 
 print("Search query")
