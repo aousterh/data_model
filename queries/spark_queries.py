@@ -30,28 +30,7 @@ FROM MERGED
 WHERE `id.orig_h` = '10.128.0.19'
 ORDER BY ts
 LIMIT 5""")
-df3 = spark.sql("""SELECT *
-        FROM MERGED
-        WHERE _path = 'smb*' or _path = 'dce_rpc'
-        """)
-df4 = spark.sql("""SELECT _path, count(*)
-        from MERGED
-        GROUP BY _path
-        ORDER BY COUNT(*) DESC""")
-df5 = spark.sql("""SELECT query, count(*)
-        from MERGED
-        WHERE _path = 'dns'
-        GROUP BY query
-        ORDER BY COUNT(*) DESC""")
-df6 = spark.sql("""SELECT ts, uid, id, method, uri, status_code
-        from MERGED
-        WHERE method = 'POST'
-        """)
-df7 = spark.sql("""SELECT _path, tx_hosts, rx_hosts, conn_uids, mime_type, filename, md5, sha1
-        from MERGED
-        WHERE filename IS NOT NULL
-        """)
-df7.show()
+df2.show()
 
 print("Data discovery query")
 print("count the number of records with each different schema")
