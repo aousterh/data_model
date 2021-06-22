@@ -3,7 +3,7 @@ from pyspark.sql.session import SparkSession
 
 # this script converts ndjson files from path ndjson_dir_name to parquet files stored in parquet_dir
 
-ndjson_dir_name = "/zq-sample-data/zeek-ndjson"
+ndjson_dir_name = "/zq-sample-data/ndjson-nested"
 parquet_dir = 'parquet'
 
 def ndjson_to_parquet():
