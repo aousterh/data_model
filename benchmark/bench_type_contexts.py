@@ -24,23 +24,8 @@ zed_queries = [("by typeof(.) | count()", "by typeof count"),
            ("sum(value)", "sum")]
 zed_formats = ["zng", "zst"]
 
-def bench_zed(zed_file_info):
-    # benchmark some queries over each file
-    with open(results_dir + "/results.csv", "a") as f_results:
-        for n_types, base_name in zed_file_info:
-
-            for zed_format in zed_formats:
-                file_name = base_name + "." + zed_format
-
-                # issue queries
-                for query, description in zed_queries:
-                    results = unix_time_bash("zq -i " + zed_format +
-                                             " -Z \"" + query + "\" " +
-                                             file_name)
-                    fields = [zed_format, description, n_types, results['real'],
-                              results['user'], results['sys'],
-                              "{:.2f}".format(results['real'] * US_PER_S / n_types)]
-                    f_results.write(",".join(str(x) for x in fields) + "\n")
+# fuse exhausts all the memory with about 4,000 types
+max_fused_types = 3 * 1000
 
 def create_zed_data():
     type_range = []
@@ -84,10 +69,45 @@ def create_zed_data():
     # create ZNG and ZST files from ZSON
     for n_types, base_name in zed_file_info:
         for zed_format in zed_formats:
-            file_name = base_name + "." + zed_format
+            # regular version
+            file_name = "{}.{}".format(base_name, zed_format)
             os.system("zq -f " + zed_format + " -o " + file_name + " " + base_name + ".zson")
 
+            if n_types > max_fused_types:
+                continue
+
+            # fused version
+            file_name = "{}_fused.{}".format(base_name, zed_format)
+            os.system("zq -f " + zed_format + " -o " + file_name + " 'fuse' " + base_name + ".zson")
+
     return zed_file_info
+
+def bench_zed(zed_file_info):
+    zed_formats_expanded = []
+    for zed_format in zed_formats:
+        zed_formats_expanded.append((zed_format, "{}.{}", False))
+        zed_formats_expanded.append((zed_format, "{}_fused.{}", True))
+
+    # benchmark some queries over each file
+    with open(results_dir + "/results.csv", "a") as f_results:
+        for n_types, base_name in zed_file_info:
+
+            for zed_format, file_str, fused in zed_formats_expanded:
+                if fused and n_types > max_fused_types:
+                    continue
+
+                file_name = file_str.format(base_name, zed_format)
+
+                # issue queries
+                for query, description in zed_queries:
+                    results = unix_time_bash("zq -i " + zed_format +
+                                             " -Z \"" + query + "\" " +
+                                             file_name)
+                    format_str = zed_format + "_fused" if fused else zed_format
+                    fields = [format_str, description, n_types, results['real'],
+                              results['user'], results['sys'],
+                              "{:.2f}".format(results['real'] * US_PER_S / n_types)]
+                    f_results.write(",".join(str(x) for x in fields) + "\n")
 
 def create_parquet_data(zed_file_info):
     spark = SparkSession.builder.master("local[1]").config("spark.executor.memory", "4g").getOrCreate()
