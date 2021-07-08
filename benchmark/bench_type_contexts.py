@@ -3,9 +3,13 @@
 # run with taskset to restrict to one core!
 # taskset -c 1 ./bench_type_contexts.py
 
-from util import unix_time, unix_time_bash
+from enum import Enum
+from util import *
+import glob
+from itertools import product
 import os
 import random
+import re
 import string
 from pyspark.sql.functions import sum
 from pyspark.sql.session import SparkSession
@@ -15,19 +19,40 @@ n_records = 1000 * 1000
 factor = 8
 results_dir = "type_context_results"
 
-def parquet_dir(n_types):
-    return "{}/parquet_{:0>7}_types".format(results_dir, n_types)
-
 # query, query description
-zed_queries = [("by typeof(.) | count()", "by typeof count"),
-           ("count()", "count"),
-           ("sum(value)", "sum")]
+zed_queries = [#("by typeof(.) | count()", "by typeof count"),
+               ("count()", "count"),
+               ("sum(value)", "sum")]
 zed_formats = ["zng", "zst"]
 
 # fuse exhausts all the memory with about 4,000 types
-max_fused_types = 3 * 1000
+max_zed_fused_types = 3 * 1000
+max_parquet_fused_types = 5 * 1000
 
-def create_zed_data():
+# enum for different ways of organizing data across files
+class Org(Enum):
+    DEFAULT = "default"
+    FUSED = "fused" # uber-schema, fused version
+    SILOED = "siloed" # single type per file
+
+    def org_dir(self, n_types):
+        return "{}/{}_{:0>7}_types".format(results_dir, self.name.lower(),
+                                           n_types)
+
+def type_name(index, n_types):
+    return "f{:0>7}".format(index % n_types)
+
+def default_file(n_types, file_format):
+    return "{}/data.{}".format(Org.DEFAULT.org_dir(n_types), file_format)
+
+def fused_file(n_types, file_format):
+    return "{}/data.{}".format(Org.FUSED.org_dir(n_types), file_format)
+
+def siloed_file(n_types, type_index, file_format):
+    t_name = type_name(type_index, n_types)
+    return "{}/{}.{}".format(Org.SILOED.org_dir(n_types), t_name, file_format)
+
+def get_type_range():
     type_range = []
     n = n_records
     while n > 1:
@@ -36,17 +61,27 @@ def create_zed_data():
     type_range.insert(0, 1)
     print("types: " + str(type_range))
 
-    # info about zed data (num types, base file name)
-    zed_file_info = []
+    return type_range
 
+def make_dirs(type_range):
+    os.system("rm -fr " + results_dir)
+    os.system("mkdir " + results_dir)
+
+    # copy this file so we have a record of how this experiment was run
+    os.system("cp " + str(__file__) + " " + results_dir)
+
+    # create directories for fused and siloed organizations of data
+    for n_types in type_range:
+        for org in Org:
+            os.system("mkdir {}".format(org.org_dir(n_types)))
+
+def create_zed_data(type_range):
     # ZSON file handles
     zson_files = {}
 
     # open ZSON files
     for n_types in type_range:
-        base_name = results_dir + "/data_{:0>7}_types".format(n_types)
-        zed_file_info.append((n_types, base_name))
-        zson_files[base_name] = open(base_name + ".zson", "w")
+        zson_files[n_types] = open(default_file(n_types, "zson"), "w")
 
     # generate data as ZSON - records in different files have the same values
     # but vary field names to create different numbers of types per file
@@ -54,123 +89,162 @@ def create_zed_data():
         letter = random.choice(string.ascii_letters)
         value = random.randint(0, 1000)
 
-        for n_types, base_name in zed_file_info:
-            if n_types == 1:
-                type_name = 0
-            else:
-                type_name = i % n_types
-
-            f = zson_files[base_name]
-            f.write("{{\"{:0>6}\":\"{}\",value:{}}}\n".format(type_name, letter, value))
+        for n_types in type_range:
+            f = zson_files[n_types]
+            f.write("{{{}:\"{}\",value:{}}}\n".format(type_name(i, n_types),
+                                                      letter, value))
 
     for f in zson_files.values():
         f.close()
 
-    # create ZNG and ZST files from ZSON
-    for n_types, base_name in zed_file_info:
+    # create ZNG, ZST, and NDJSON files from ZSON
+    for n_types in type_range:
         for zed_format in zed_formats:
             # regular version
-            file_name = "{}.{}".format(base_name, zed_format)
-            os.system("zq -f " + zed_format + " -o " + file_name + " " + base_name + ".zson")
+            os.system("zq -f {} -o {} {}".format(
+                zed_format, default_file(n_types, zed_format), default_file(n_types, "zson")))
 
-            if n_types > max_fused_types:
+            # convert ZNG to NDJSON
+            os.system("zq -f ndjson -o {} {}".format(
+                default_file(n_types, "ndjson"), default_file(n_types, "zng")))
+
+            if n_types > max_zed_fused_types:
                 continue
 
             # fused version
-            file_name = "{}_fused.{}".format(base_name, zed_format)
-            os.system("zq -f " + zed_format + " -o " + file_name + " 'fuse' " + base_name + ".zson")
+            os.system("zq -f {} -o {} 'fuse' {}".format(
+                zed_format, fused_file(n_types, zed_format), default_file(n_types, "zson")))
 
-    return zed_file_info
+    # create files with a single type per file
+    for n_types in type_range:
+        for zed_format in zed_formats:
+            for i in range(n_types):
+                input_file = default_file(n_types, zed_format)
+                t_name = type_name(i, n_types)
+                siloed_file_name = siloed_file(n_types, i, zed_format)
+                os.system("zq -f {} -o {} 'has({})' {}".format(zed_format, siloed_file_name,
+                                                               t_name, input_file))
 
-def bench_zed(zed_file_info):
-    zed_formats_expanded = []
-    for zed_format in zed_formats:
-        zed_formats_expanded.append((zed_format, "{}.{}", False))
-        zed_formats_expanded.append((zed_format, "{}_fused.{}", True))
+                # convert ZNG to NDJSON (only once)
+                if zed_format == zed_formats[0]:
+                    ndjson_file = siloed_file(n_types, i, "ndjson")
+                    os.system("zq -f ndjson -o {} {}".format(ndjson_file, siloed_file_name))
 
+def bench_zed(type_range):
     # benchmark some queries over each file
     with open(results_dir + "/results.csv", "a") as f_results:
-        for n_types, base_name in zed_file_info:
+        for n_types in type_range:
 
-            for zed_format, file_str, fused in zed_formats_expanded:
-                if fused and n_types > max_fused_types:
+            for zed_format, organization in product(zed_formats,
+                                                    [org for org in Org]):
+                if organization == Org.FUSED and n_types > max_zed_fused_types:
                     continue
 
-                file_name = file_str.format(base_name, zed_format)
+                if organization == Org.SILOED:
+                    # use * to match all siloed files
+                    file_name = "{}/*.{}".format(organization.org_dir(n_types), zed_format)
+                elif organization == Org.FUSED:
+                    file_name = fused_file(n_types, zed_format)
+                else:
+                    file_name = default_file(n_types, zed_format)
 
                 # issue queries
                 for query, description in zed_queries:
-                    results = unix_time_bash("zq -i " + zed_format +
-                                             " -Z \"" + query + "\" " +
-                                             file_name)
-                    format_str = zed_format + "_fused" if fused else zed_format
-                    fields = [format_str, description, n_types, results['real'],
-                              results['user'], results['sys'],
-                              "{:.2f}".format(results['real'] * US_PER_S / n_types)]
+                    flush_buffer_cache()
+
+                    results = unix_time_bash("zq -i {} -z \"{}\" {}".format(
+                        zed_format, query, file_name))
+                    return_val = re.search(r"{(.*):(\d*)", results['return']).groups()[1]
+                    fields = [zed_format, organization.value, description,
+                              n_types, results['real'], results['user'],
+                              results['sys'],
+                              "{:.2f}".format(results['real'] * US_PER_S / n_types),
+                              return_val]
                     f_results.write(",".join(str(x) for x in fields) + "\n")
 
-def create_parquet_data(zed_file_info):
+def create_parquet_data(type_range):
     spark = SparkSession.builder.master("local[1]").config("spark.executor.memory", "4g").getOrCreate()
 
-    # convert ZNG to NDJSON
-    for n_types, base_name in zed_file_info:
-        os.system("zq -f ndjson -o {}.ndjson {}.zng".format(base_name, base_name))
-
     # convert NDJSON to Parquet
-    for n_types, base_name in zed_file_info:
-        # create directory for data with this many types
-        os.system("rm -fr {}".format(parquet_dir(n_types)))
-        os.system("mkdir {}".format(parquet_dir(n_types)))
+    for n_types in type_range:
+        if n_types <= max_parquet_fused_types:
+            # merges all types into a single fused schema
+            df = spark.read.json(default_file(n_types, "ndjson"))
+            df.write.format("parquet").mode("append").save(Org.FUSED.org_dir(n_types))
 
-        # merges all types into a single uber schema
-        df = spark.read.json(base_name + ".ndjson")
-        df.write.format("parquet").mode("append").save(parquet_dir(n_types))
+        # create siloed data
+        for i in range(n_types):
+            df = spark.read.json(siloed_file(n_types, i, "ndjson"))
+            df.write.format("parquet").mode("append").save(Org.SILOED.org_dir(n_types))
 
-def query_count(df):
-    df.count()
+def query_count(spark, paths):
+    df = spark.read.parquet(paths[0])
+    return df.count()
 
-def query_sum(df):
-    df.select(sum("value")).show()
+def query_count_siloed(spark, paths):
+    count = 0
+    for file_path in paths:
+        df = spark.read.parquet(file_path)
+        count += df.count()
+    return count
 
-spark_queries = [(query_count, "count"),
-                 (query_sum, "sum")]
+def query_sum(spark, paths):
+    df = spark.read.parquet(paths[0])
+    return df.select(sum("value")).first()[0]
 
-def bench_parquet(zed_file_info):
+def query_sum_siloed(spark, paths):
+    total = 0
+    for file_path in paths:
+        df = spark.read.parquet(file_path)
+        total += df.select(sum("value")).first()[0]
+    return total
+
+# query and organization
+spark_queries = [(query_count, "count", Org.FUSED),
+                 (query_sum, "sum", Org.FUSED),
+                 (query_count_siloed, "count", Org.SILOED),
+                 (query_sum_siloed, "sum", Org.SILOED)]
+
+def bench_parquet(type_range):
     spark = SparkSession.builder.master("local[1]").config("spark.executor.memory", "4g").getOrCreate()
 
     with open(results_dir + "/results.csv", "a") as f_results:
-        for n_types, base_name in zed_file_info:
-            df = spark.read.parquet("{}/*.parquet".format(parquet_dir(n_types)))
+        for n_types in type_range:
+            paths = {}
+            paths[Org.FUSED] = ["{}/*.parquet".format(Org.FUSED.org_dir(n_types))]
+            paths[Org.SILOED] = glob.glob("{}/*.parquet".format(Org.SILOED.org_dir(n_types)))
 
-            for query, description in spark_queries:
-                results = unix_time(query, df=df)
+            for query, description, organization in spark_queries:
+                if organization == Org.FUSED and n_types > max_parquet_fused_types:
+                    continue
+
+                results = unix_time(query, spark=spark, paths=paths[organization])
 
                 results_str = {}
-                for k in ["real", "user", "sys"]:
+                for k in list(results.keys()):
                     results_str[k] = "{:.2f}".format(results[k])
 
-                fields = ["parquet", description, n_types, results_str['real'],
-                          results_str['user'], results_str['sys'],
-                          "{:.2f}".format(results['real'] * US_PER_S / n_types)]
+                fields = ["parquet", organization.value, description, n_types,
+                          results_str['real'], results_str['user'],
+                          results_str['sys'],
+                          "{:.2f}".format(results['real'] * US_PER_S / n_types),
+                          results_str['return']]
                 f_results.write(",".join(str(x) for x in fields) + "\n")
+                f_results.flush()
 
 def main():
-    os.system("rm -fr " + results_dir)
-    os.system("mkdir " + results_dir)
+    type_range = get_type_range()
+    make_dirs(type_range)
 
+    # create all data
+    create_zed_data(type_range)
+    create_parquet_data(type_range)
+
+    # run benchmarks
     with open(results_dir + "/results.csv", "w") as f_results:
-        f_results.write("format,query,n_types,real,user,sys,us_per_type\n")
-
-    zed_file_info = create_zed_data()
-    bench_zed(zed_file_info)
-
-    zed_file_info_subset = []
-    for n_types, base_name in zed_file_info:
-        if n_types < 5000:
-            zed_file_info_subset.append((n_types, base_name))
-    print("parquet subset: " + str(zed_file_info_subset))
-    create_parquet_data(zed_file_info_subset)
-    bench_parquet(zed_file_info_subset)
+        f_results.write("format,organization,query,n_types,real,user,sys,us_per_type,result\n")
+    bench_zed(type_range)
+    bench_parquet(type_range)
 
 if __name__ == '__main__':
     main()

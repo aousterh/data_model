@@ -30,7 +30,7 @@ def unix_time_bash(cmd):
 
     escaped_cmd = cmd.replace("'", "'\\''")
     completed = subprocess.run("bash -c 'time -p {}'".format(escaped_cmd),
-                               shell=True, text=True, stdout=subprocess.DEVNULL,
+                               shell=True, text=True, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
 
     m = re.match(r"real (.*)\nuser (.*)\nsys (.*)\n", completed.stderr)
@@ -38,7 +38,8 @@ def unix_time_bash(cmd):
         print("Command threw error: " + completed.stderr)
         return {}
 
-    return {'real': float(m.group(1)),
+    return {'return': completed.stdout,
+            'real': float(m.group(1)),
             'user': float(m.group(2)),
             'sys': float(m.group(3))
     }
