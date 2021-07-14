@@ -2,9 +2,11 @@
 # (which can be input to different backends besides elastic).
 # This will be the workload generation script.
 import json
+import ndjson
 import os
 import pandas as pd
 import random
+import jq
 
 def getUnique(field):
     recordList =[]
@@ -30,15 +32,16 @@ def getUnique(field):
     return df[field]
 
 def generateWorkload(query_name, field="id.orig_h" ,runs=1000):
-    data = {}
-    data['workload'] = []
+    workload = []
     uniqueVals = getUnique(field)
     for i in range(runs):
         uniqueVal = random.choice(uniqueVals)
-        data['workload'].append({'query': query_name + " " + field, 'arguments': [uniqueVal]})
+        workload.append({'query': query_name + " " + field, 'arguments': [uniqueVal]})
 
-    with open('output/workload.json', 'w') as outfile:
-        json.dump(data, outfile, indent=4)
+    with open('output/workload.ndjson', 'w') as f:
+        writer = ndjson.writer(f, ensure_ascii=False)
+        for query in workload:
+            writer.writerow(query)
 
 def main():
     os.system("mkdir output")
