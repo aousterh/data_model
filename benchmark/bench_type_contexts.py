@@ -16,14 +16,19 @@ from pyspark.sql.session import SparkSession
 
 US_PER_S = 1000 * 1000
 n_records = 1000 * 1000
+#max_types = n_records
+max_types = 10 * 1000
 factor = 8
 results_dir = "type_context_results"
+results_csv = "{}/results.csv".format(results_dir)
+sizes_csv = "{}/sizes.csv".format(results_dir)
 
 # query, query description
 zed_queries = [#("by typeof(.) | count()", "by typeof count"),
                ("count()", "count"),
                ("sum(value)", "sum")]
 zed_formats = ["zng", "zst"]
+all_formats = zed_formats + ["zson", "ndjson", "parquet"]
 
 # fuse exhausts all the memory with about 4,000 types
 max_zed_fused_types = 3 * 1000
@@ -54,7 +59,7 @@ def siloed_file(n_types, type_index, file_format):
 
 def get_type_range():
     type_range = []
-    n = n_records
+    n = max_types
     while n > 1:
         type_range.insert(0, n)
         n = int(n / factor)
@@ -104,10 +109,6 @@ def create_zed_data(type_range):
             os.system("zq -f {} -o {} {}".format(
                 zed_format, default_file(n_types, zed_format), default_file(n_types, "zson")))
 
-            # convert ZNG to NDJSON
-            os.system("zq -f ndjson -o {} {}".format(
-                default_file(n_types, "ndjson"), default_file(n_types, "zng")))
-
             if n_types > max_zed_fused_types:
                 continue
 
@@ -115,24 +116,28 @@ def create_zed_data(type_range):
             os.system("zq -f {} -o {} 'fuse' {}".format(
                 zed_format, fused_file(n_types, zed_format), default_file(n_types, "zson")))
 
+        # convert to NDJSON
+        os.system("zq -f ndjson -o {} {}".format(
+            default_file(n_types, "ndjson"), default_file(n_types, "zson")))
+
     # create files with a single type per file
     for n_types in type_range:
-        for zed_format in zed_formats:
-            for i in range(n_types):
+        for i in range(n_types):
+            for zed_format in zed_formats:
                 input_file = default_file(n_types, zed_format)
                 t_name = type_name(i, n_types)
                 siloed_file_name = siloed_file(n_types, i, zed_format)
-                os.system("zq -f {} -o {} 'has({})' {}".format(zed_format, siloed_file_name,
+                os.system("zq -i {} -f {} -o {} 'has({})' {}".format(zed_format, zed_format, siloed_file_name,
                                                                t_name, input_file))
 
-                # convert ZNG to NDJSON (only once)
-                if zed_format == zed_formats[0]:
-                    ndjson_file = siloed_file(n_types, i, "ndjson")
-                    os.system("zq -f ndjson -o {} {}".format(ndjson_file, siloed_file_name))
+            # convert to NDJSON
+            ndjson_file = siloed_file(n_types, i, "ndjson")
+            os.system("zq -f ndjson -o {} {}".format(
+                ndjson_file, siloed_file(n_types, i, zed_formats[0])))
 
 def bench_zed(type_range):
     # benchmark some queries over each file
-    with open(results_dir + "/results.csv", "a") as f_results:
+    with open(results_csv, "a") as f_results:
         for n_types in type_range:
 
             for zed_format, organization in product(zed_formats,
@@ -208,7 +213,7 @@ spark_queries = [(query_count, "count", Org.FUSED),
 def bench_parquet(type_range):
     spark = SparkSession.builder.master("local[1]").config("spark.executor.memory", "4g").getOrCreate()
 
-    with open(results_dir + "/results.csv", "a") as f_results:
+    with open(results_csv, "a") as f_results:
         for n_types in type_range:
             paths = {}
             paths[Org.FUSED] = ["{}/*.parquet".format(Org.FUSED.org_dir(n_types))]
@@ -232,6 +237,25 @@ def bench_parquet(type_range):
                 f_results.write(",".join(str(x) for x in fields) + "\n")
                 f_results.flush()
 
+def get_file_sizes(type_range):
+    with open(sizes_csv, "w") as f_sizes:
+        f_sizes.write("format,organization,n_types,size\n")
+
+        for n_types in type_range:
+            for org in Org:
+                for data_format in all_formats:
+                    size = 0
+                    paths = glob.glob("{}/*.{}".format(org.org_dir(n_types),
+                                                       data_format))
+                    for path in paths:
+                        size += os.path.getsize(path)
+
+                    if size > 0:
+                        size_mib = size / (1024*1024.0)
+                        fields = [data_format, org.value, n_types,
+                                  "{:.2f}".format(size_mib)]
+                        f_sizes.write(",".join(str(x) for x in fields) + "\n")
+
 def main():
     type_range = get_type_range()
     make_dirs(type_range)
@@ -240,8 +264,11 @@ def main():
     create_zed_data(type_range)
     create_parquet_data(type_range)
 
+    # measure file sizes
+    get_file_sizes(type_range)
+
     # run benchmarks
-    with open(results_dir + "/results.csv", "w") as f_results:
+    with open(results_csv, "w") as f_results:
         f_results.write("format,organization,query,n_types,real,user,sys,us_per_type,result\n")
     bench_zed(type_range)
     bench_parquet(type_range)
