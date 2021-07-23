@@ -25,12 +25,12 @@ def unix_time(function, *args, **kwargs):
             'sys': end_resources.ru_stime - start_resources.ru_stime,
             'user': end_resources.ru_utime - start_resources.ru_utime}
 
-def unix_time_bash(cmd):
+def unix_time_bash(cmd, stdout=subprocess.DEVNULL):
     '''Executes and times the command in bash.'''
 
     escaped_cmd = cmd.replace("'", "'\\''")
     completed = subprocess.run("bash -c 'time -p {}'".format(escaped_cmd),
-                               shell=True, text=True, stdout=subprocess.PIPE,
+                               shell=True, text=True, stdout=stdout,
                                stderr=subprocess.PIPE)
 
     m = re.match(r"real (.*)\nuser (.*)\nsys (.*)\n", completed.stderr)

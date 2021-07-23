@@ -158,7 +158,7 @@ def bench_zed(type_range):
                     flush_buffer_cache()
 
                     results = unix_time_bash("zq -i {} -z \"{}\" {}".format(
-                        zed_format, query, file_name))
+                        zed_format, query, file_name), stdout=subprocess.PIPE)
                     return_val = re.search(r"{(.*):(\d*)", results['return']).groups()[1]
                     fields = [zed_format, organization.value, description,
                               n_types, results['real'], results['user'],
