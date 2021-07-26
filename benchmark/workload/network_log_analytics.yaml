@@ -1,0 +1,6 @@
+kind: analytics
+dataset:
+  name: network_log
+query:
+  sum_orig_bytes:
+    TBD
