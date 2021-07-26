@@ -1,2 +1,4 @@
 *~
 .idea/
+.mongo/
+/benchmark/workload/zed-sample-data

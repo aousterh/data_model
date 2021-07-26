@@ -1,0 +1,25 @@
+network_log:
+  zeek:
+    format: zeek
+    compressed: gz
+    location: zed-sample-data/zeek-default
+  ndjson:
+    format: ndjson
+    compressed: gz
+    location: zed-sample-data/zeek-ndjson
+  ndjson-nested:
+    format: ndjson
+    compressed: gz
+    location: zed-sample-data-variants/ndjson-nested
+  zng:
+    format: zng
+    compressed: gz
+    location: zed-sample-data/zng
+  zng-uncompressed:
+    format: zng
+    compressed: null
+    location: zed-sample-data/zng-uncompressed
+  zson:
+    format: zson
+    compressed: gz
+    location: zed-sample-data/zson
