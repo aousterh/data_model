@@ -1,9 +1,7 @@
 kind: search
 dataset:
   name: network_log
-parameter:
-  seed: 42
-  num_run: 3
-  field: id.orig_h
-  values: ["10.47.3.50", "foo"]
-  warmup: true
+query:
+  random_orig_h:
+    field: id.orig_h
+    values: ["10.47.3.50", "foo"]

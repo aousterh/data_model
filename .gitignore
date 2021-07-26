@@ -2,3 +2,4 @@
 .idea/
 .mongo/
 /benchmark/workload/zed-sample-data
+/benchmark/workload/zed-sample-data-variants
