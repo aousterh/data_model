@@ -32,9 +32,10 @@ def getUnique(field):
         df.to_csv(outfile, index=False, mode='a')
     return df[field]
 
-def generateWorkload(query_name, field="id.orig_h" ,runs=1000):
+def generateWorkload(query_name, field="id.orig_h" ,runs=1000, seed=10):
     workload = []
     uniqueVals = getUnique(field)
+    random.seed(seed)
     for i in range(runs):
         uniqueVal = random.choice(uniqueVals)
         workload.append({'query': query_name + " " + field, 'arguments': [uniqueVal]})
@@ -47,7 +48,7 @@ def generateWorkload(query_name, field="id.orig_h" ,runs=1000):
 def main():
     os.system("rm -fr {}".format(OUTPUT_DIR))
     os.system("mkdir {}".format(OUTPUT_DIR))
-    generateWorkload("search", "id.orig_h", 1000)
+    generateWorkload("search", "id.orig_h", 1000, 10)
 
 if __name__ == "__main__":
     main()
