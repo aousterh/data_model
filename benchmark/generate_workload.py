@@ -27,6 +27,7 @@ def getUnique(field):
                         pass
     df[field] = list(set(possibleVals))
     outfile = '{}/possibleVals.csv'.format(OUTPUT_DIR)
+    
     with open(outfile, 'w') as outfile:
         df.to_csv(outfile, index=False, mode='a')
     return df[field]
