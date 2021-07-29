@@ -2,4 +2,3 @@ __pycache__
 *.md
 logs/
 type_context_results*/
-workload
