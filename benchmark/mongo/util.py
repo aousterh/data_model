@@ -3,6 +3,7 @@
 import os
 import time
 import yaml
+import json
 
 import numpy as np
 from resource import getrusage as resource_usage, RUSAGE_SELF
@@ -13,6 +14,7 @@ path_join = os.path.join
 _dir = os.path.dirname(os.path.realpath(__file__))
 workload_dir = path_join(_dir, "..", "workload")
 dataset_info = path_join(workload_dir, "dataset.yaml")
+trace_dir = path_join(workload_dir, "trace")
 
 
 def workload_config(name):
@@ -46,8 +48,8 @@ def benchmark(fn, init_fn=None, *init_args, num_iter=10, **init_kwargs):
     before each time it calls fn, to allow for custom per-iteration
     initialization.
     '''
-
     _real, _sys, _user = list(), list(), list()
+    _return = None
     for _ in range(num_iter):
         if init_fn:
             (args, kwargs) = init_fn(*init_args, **init_kwargs)
@@ -58,8 +60,11 @@ def benchmark(fn, init_fn=None, *init_args, num_iter=10, **init_kwargs):
         _real.append(t["real"])
         _sys.append(t["sys"])
         _user.append(t["user"])
+        # take the last run only
+        _return = t["return"]
 
     return {
+        "return": _return,
         "real": round(np.mean(_real), 5),
         "user": round(np.mean(_user), 5),
         "sys": round(np.mean(_sys), 5),
@@ -79,3 +84,31 @@ def timed(fn):
         return result
 
     return timeit
+
+
+def write_csv(rows: list, name: str):
+    with open(name, "w") as f:
+        header = ",".join(map(str, rows[0].keys()))
+        f.write(header + "\n")
+        for r in rows:
+            f.write(",".join(map(str, r.values())))
+            f.write("\n")
+
+
+def read_trace(name):
+    tr = list()
+    with open(path_join(trace_dir, name)) as f:
+        if name.endswith("ndjson"):
+            for line in f:
+                tr.append(json.loads(line))
+        else:
+            raise NotImplemented
+    return tr
+
+
+def main():
+    read_trace("network_log_search_1000.ndjson")
+
+
+if __name__ == '__main__':
+    main()

@@ -1,4 +1,5 @@
 *~
+.DS_Store
 .idea/
 .mongo/
 /benchmark/workload/zed-sample-data

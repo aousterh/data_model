@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import os
+import time
 import yaml
 from multiprocessing import Pool
+from collections import OrderedDict
 
 from pymongo import MongoClient
 
@@ -21,38 +23,77 @@ class Benchmark:
         self._cols = None
 
     def connect(self):
-        _c = MongoClient('localhost', 27017, maxPoolSize=10000)
-        self._cols = _c[self._db].list_collection_names()
+        _cli = MongoClient('localhost', 27017, maxPoolSize=10000)
+        self._cols = _cli[self._db].list_collection_names()
+
+        _col = os.environ.get("COL", None)
+        if _col:
+            assert _col in self._cols
+            self._cols = [_col]
         return self
 
     def run(self):
         if self._meta.get("warmup", True):
-            pass
+            raise NotImplemented
 
         for workload in self._benchmark:
             wc = util.workload_config(workload)
 
             for name, param in wc["query"].items():
+                start = time.time()
+                results = list()
                 query_funcs = list()
 
                 if wc["kind"] == "search":
-                    for v in param["values"]:
-                        def f():
-                            pool = Pool(self._meta.get("num_thread", 1))
-                            results = pool.starmap(_search, [(self._db, c, param["field"], v)
-                                                             for c in self._cols])
-                            return results
-                        query_funcs.append(f)
+                    def make_exec(_v):
+                        def _exec():
+                            if len(self._cols) > 1:
+                                pool = Pool(self._meta.get("num_thread", 1))
+                                _output = pool.starmap(_search, [(self._db, c, param["field"], _v)
+                                                                 for c in self._cols])
+                            else:
+                                _output = _search(self._db, self._cols[0], param["field"], _v)
+                            return _output
+
+                        return _exec
+
+                    values = list()
+                    tf = param.get("trace_file", None)
+                    if tf:
+                        values = [row["arguments"][0] for row in util.read_trace(tf)]
+                        values = values[:param.get("batch_size", len(values))]
+                    for v in values:
+                        query_funcs.append((make_exec(v), v))
+
                 elif wc["kind"] == "analytics":
-                    pass
+                    raise NotImplemented
+
                 else:
                     raise NotImplemented
 
-                for f in query_funcs:
+                for i, (f, arg) in enumerate(query_funcs):
+                    print(f"progress: running with {i+1}/{len(query_funcs)}")
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
-                    r["name"] = name
-                    # TBD dump to log
-                    print(r)
+
+                    # dump to log
+                    results.append(OrderedDict({
+                        "index": i,
+                        "system": "mongo",
+                        "in_format": "bson",
+                        "out_format": "json",
+                        "query": param["desc"],
+                        "start_time": round(time.time() - start, 3),
+                        "real": r["real"],
+                        "user": r["user"],
+                        "sys": r["sys"],
+                        "argument_0": arg,
+                        "validation": len(r["return"]),
+                    }))
+            util.write_csv(results, f"mongo-{wc['kind']}-{name}.csv")
+
+
+# def _range_sum(db, col, ):
+#     pass
 
 
 def _search(db, col, field, value):
