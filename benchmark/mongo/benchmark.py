@@ -32,7 +32,7 @@ class Benchmark:
 
     def run(self):
         if self._meta.get("warmup", True):
-            pass
+            raise NotImplemented
 
         for workload in self._benchmark:
             wc = util.workload_config(workload)
@@ -41,18 +41,22 @@ class Benchmark:
                 query_funcs = list()
 
                 if wc["kind"] == "search":
-                    def make_f(_v):
-                        def _f():
-                            pool = Pool(self._meta.get("num_thread", 1))
-                            results = pool.starmap(_search, [(self._db, c, param["field"], _v)
-                                                             for c in self._cols])
+                    def make_exec(_v):
+                        def _exec():
+                            if len(self._cols) > 1:
+                                pool = Pool(self._meta.get("num_thread", 1))
+                                results = pool.starmap(_search, [(self._db, c, param["field"], _v)
+                                                                 for c in self._cols])
+                            else:
+                                results = _search(self._db, self._cols[0], param["field"], _v)
                             return results
-                        return _f
+                        return _exec
 
                     for v in param["values"]:
-                        query_funcs.append(make_f(v))
+                        query_funcs.append(make_exec(v))
+
                 elif wc["kind"] == "analytics":
-                    pass
+                    raise NotImplemented
                 else:
                     raise NotImplemented
 
@@ -63,8 +67,10 @@ class Benchmark:
                     # TBD amy format
                     print(r)
 
+
 # def _range_sum(db, col, ):
 #     pass
+
 
 def _search(db, col, field, value):
     _c = MongoClient('localhost', 27017, maxPoolSize=10000)

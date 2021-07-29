@@ -1,10 +1,10 @@
 name: mongo
 version: 4.2
 meta:
-  warmup: true
+  warmup: false
   num_run: 3
   num_thread: 4
   seed: 42
 benchmark:
   - network_log_search
-  - network_log_analytics
+#  - network_log_analytics
