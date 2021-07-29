@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import os
+import time
 import yaml
 from multiprocessing import Pool
+from collections import OrderedDict
 
 from pymongo import MongoClient
 
@@ -38,6 +40,8 @@ class Benchmark:
             wc = util.workload_config(workload)
 
             for name, param in wc["query"].items():
+                start = time.time()
+                results = list()
                 query_funcs = list()
 
                 if wc["kind"] == "search":
@@ -45,28 +49,38 @@ class Benchmark:
                         def _exec():
                             if len(self._cols) > 1:
                                 pool = Pool(self._meta.get("num_thread", 1))
-                                results = pool.starmap(_search, [(self._db, c, param["field"], _v)
+                                _output = pool.starmap(_search, [(self._db, c, param["field"], _v)
                                                                  for c in self._cols])
                             else:
-                                results = _search(self._db, self._cols[0], param["field"], _v)
-                            return results
+                                _output = _search(self._db, self._cols[0], param["field"], _v)
+                            return _output
+
                         return _exec
 
                     for v in param["values"]:
-                        query_funcs.append(make_exec(v))
+                        query_funcs.append((make_exec(v), v))
 
                 elif wc["kind"] == "analytics":
                     raise NotImplemented
                 else:
                     raise NotImplemented
 
-                for f in query_funcs:
+                for f, arg in query_funcs:
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
-                    r["name"] = name
-                    # TBD dump to log
-                    # TBD amy format
-                    print(r)
-
+                    # dump to log
+                    results.append(OrderedDict({
+                        "system": "mongo",
+                        "in_format": "bson",
+                        "out_format": "json",
+                        "query": param["desc"],
+                        "start_time": round(time.time() - start, 3),
+                        "real": r["real"],
+                        "user": r["user"],
+                        "sys": r["sys"],
+                        "argument_0": arg,
+                        "validation": len(r["return"]),
+                    }))
+            util.write_csv(results, f"mongo-{wc['kind']}-{name}.csv")
 
 # def _range_sum(db, col, ):
 #     pass

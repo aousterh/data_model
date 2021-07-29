@@ -47,6 +47,7 @@ def benchmark(fn, init_fn=None, *init_args, num_iter=10, **init_kwargs):
     initialization.
     '''
     _real, _sys, _user = list(), list(), list()
+    _return = None
     for _ in range(num_iter):
         if init_fn:
             (args, kwargs) = init_fn(*init_args, **init_kwargs)
@@ -57,8 +58,11 @@ def benchmark(fn, init_fn=None, *init_args, num_iter=10, **init_kwargs):
         _real.append(t["real"])
         _sys.append(t["sys"])
         _user.append(t["user"])
+        # take the last run only
+        _return = t["return"]
 
     return {
+        "return": _return,
         "real": round(np.mean(_real), 5),
         "user": round(np.mean(_user), 5),
         "sys": round(np.mean(_sys), 5),
@@ -78,3 +82,12 @@ def timed(fn):
         return result
 
     return timeit
+
+
+def write_csv(rows: list, name: str):
+    with open(name, "w") as f:
+        header = ",".join(map(str, rows[0].keys()))
+        f.write(header + "\n")
+        for r in rows:
+            f.write(",".join(map(str, r.values())))
+            f.write("\n")

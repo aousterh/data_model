@@ -2,7 +2,7 @@ name: mongo
 version: 4.2
 meta:
   warmup: false
-  num_run: 3
+  num_run: 1
   num_thread: 4
   seed: 42
 benchmark:
