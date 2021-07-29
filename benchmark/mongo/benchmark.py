@@ -57,16 +57,24 @@ class Benchmark:
 
                         return _exec
 
-                    for v in param["values"]:
+                    values = list()
+                    tf = param.get("trace_file", None)
+                    if tf:
+                        values = [row["arguments"][0] for row in util.read_trace(tf)]
+                        values = values[:param.get("batch_size", len(values))]
+                    for v in values:
                         query_funcs.append((make_exec(v), v))
 
                 elif wc["kind"] == "analytics":
                     raise NotImplemented
+
                 else:
                     raise NotImplemented
 
-                for f, arg in query_funcs:
+                for i, (f, arg) in enumerate(query_funcs):
+                    print(f"progress: running with {i+1}/{len(query_funcs)}")
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
+
                     # dump to log
                     results.append(OrderedDict({
                         "system": "mongo",
@@ -81,6 +89,7 @@ class Benchmark:
                         "validation": len(r["return"]),
                     }))
             util.write_csv(results, f"mongo-{wc['kind']}-{name}.csv")
+
 
 # def _range_sum(db, col, ):
 #     pass

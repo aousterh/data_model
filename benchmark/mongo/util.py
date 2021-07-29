@@ -3,6 +3,7 @@
 import os
 import time
 import yaml
+import json
 
 import numpy as np
 from resource import getrusage as resource_usage, RUSAGE_SELF
@@ -13,6 +14,7 @@ path_join = os.path.join
 _dir = os.path.dirname(os.path.realpath(__file__))
 workload_dir = path_join(_dir, "..", "workload")
 dataset_info = path_join(workload_dir, "dataset.yaml")
+trace_dir = path_join(workload_dir, "trace")
 
 
 def workload_config(name):
@@ -91,3 +93,22 @@ def write_csv(rows: list, name: str):
         for r in rows:
             f.write(",".join(map(str, r.values())))
             f.write("\n")
+
+
+def read_trace(name):
+    tr = list()
+    with open(path_join(trace_dir, name)) as f:
+        if name.endswith("ndjson"):
+            for line in f:
+                tr.append(json.loads(line))
+        else:
+            raise NotImplemented
+    return tr
+
+
+def main():
+    read_trace("network_log_search_1000.ndjson")
+
+
+if __name__ == '__main__':
+    main()
