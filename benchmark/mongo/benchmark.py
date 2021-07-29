@@ -77,6 +77,7 @@ class Benchmark:
 
                     # dump to log
                     results.append(OrderedDict({
+                        "index": i,
                         "system": "mongo",
                         "in_format": "bson",
                         "out_format": "json",
