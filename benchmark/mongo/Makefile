@@ -1,5 +1,6 @@
 .PHONY: stop start load run
 DB := zed
+COL := zeek
 CONFIG := default
 
 # Steps:
@@ -20,6 +21,6 @@ start:
 	mkdir .mongo || true
 	mongod --dbpath .mongo > /dev/null 2>&1 &
 load:
-	DB=$(DB) ./load.py
+	DB=$(DB) COL=$(COL) ./load.py
 run:
-	DB=$(DB) CONFIG=$(CONFIG) ./benchmark.py
+	DB=$(DB) COL=$(COL) CONFIG=$(CONFIG) ./benchmark.py

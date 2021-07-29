@@ -29,9 +29,11 @@ def load():
         os.system(f"cd {d}; gzip -d *.gz")
         fs = glob.glob(path_join(d, "*.ndjson"))
 
+        col = os.environ.get("COL", None)
         for f in fs:
             os.system(f"mongoimport -d "
                       f"{os.environ['DB']} "
+                      f"{f'-c {col} ' if col is not None else ''}"
                       f"{f}")
 
 
