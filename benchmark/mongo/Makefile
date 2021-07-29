@@ -1,6 +1,6 @@
 .PHONY: stop start load run
 DB := zed
-COL := zeek
+COL := zeek  # comment out to use multiple collections
 CONFIG := default
 
 # Steps:

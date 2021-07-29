@@ -21,8 +21,13 @@ class Benchmark:
         self._cols = None
 
     def connect(self):
-        _c = MongoClient('localhost', 27017, maxPoolSize=10000)
-        self._cols = _c[self._db].list_collection_names()
+        _cli = MongoClient('localhost', 27017, maxPoolSize=10000)
+        self._cols = _cli[self._db].list_collection_names()
+
+        _col = os.environ.get("COL", None)
+        if _col:
+            assert _col in self._cols
+            self._cols = [_col]
         return self
 
     def run(self):
@@ -36,13 +41,16 @@ class Benchmark:
                 query_funcs = list()
 
                 if wc["kind"] == "search":
-                    for v in param["values"]:
-                        def f():
+                    def make_f(_v):
+                        def _f():
                             pool = Pool(self._meta.get("num_thread", 1))
-                            results = pool.starmap(_search, [(self._db, c, param["field"], v)
+                            results = pool.starmap(_search, [(self._db, c, param["field"], _v)
                                                              for c in self._cols])
                             return results
-                        query_funcs.append(f)
+                        return _f
+
+                    for v in param["values"]:
+                        query_funcs.append(make_f(v))
                 elif wc["kind"] == "analytics":
                     pass
                 else:
@@ -52,8 +60,11 @@ class Benchmark:
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
                     r["name"] = name
                     # TBD dump to log
+                    # TBD amy format
                     print(r)
 
+# def _range_sum(db, col, ):
+#     pass
 
 def _search(db, col, field, value):
     _c = MongoClient('localhost', 27017, maxPoolSize=10000)

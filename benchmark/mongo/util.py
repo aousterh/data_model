@@ -46,7 +46,6 @@ def benchmark(fn, init_fn=None, *init_args, num_iter=10, **init_kwargs):
     before each time it calls fn, to allow for custom per-iteration
     initialization.
     '''
-
     _real, _sys, _user = list(), list(), list()
     for _ in range(num_iter):
         if init_fn:
