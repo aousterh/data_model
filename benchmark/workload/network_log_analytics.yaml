@@ -2,5 +2,5 @@ kind: analytics
 dataset:
   name: network_log
 query:
-  sum_orig_bytes:
+  range_sum_orig_bytes:
     TBD
