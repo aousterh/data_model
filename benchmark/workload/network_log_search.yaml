@@ -4,6 +4,7 @@ dataset:
 query:
   random_orig_h:
     field: id.orig_h
+    index: true
     # ignored when trace file is given
     values: ["10.47.3.50", "foo"]
     trace_file: "network_log_search_30.ndjson"
