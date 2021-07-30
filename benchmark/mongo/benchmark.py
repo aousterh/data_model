@@ -82,7 +82,7 @@ class Benchmark:
                     results.append(OrderedDict({
                         "index": i,
                         "system": "mongo",
-                        "in_format": "bson",
+                        "in_format": "index" if param.get("index", False) else "bson",
                         "out_format": "json",
                         "query": param["desc"],
                         "start_time": round(time.time() - start, 3),
