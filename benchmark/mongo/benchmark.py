@@ -19,12 +19,12 @@ class Benchmark:
             self._meta = self._config.get("meta", {})
             self._benchmark = self._config.get("benchmark", {})
 
-        self._db = os.environ['DB']
-        self._cols = None
+        self._db: str = os.environ['DB']
+        self._cli, self._cols = None, None
 
     def connect(self):
-        _cli = MongoClient('localhost', 27017, maxPoolSize=10000)
-        self._cols = _cli[self._db].list_collection_names()
+        self._cli = MongoClient('localhost', 27017, maxPoolSize=10000)
+        self._cols = self._cli[self._db].list_collection_names()
 
         _col = os.environ.get("COL", None)
         if _col:
@@ -45,6 +45,9 @@ class Benchmark:
                 query_funcs = list()
 
                 if wc["kind"] == "search":
+                    _update_index(self._db, self._cols, param["field"],
+                                  drop=not param.get("index", False))
+
                     def make_exec(_v):
                         def _exec():
                             if len(self._cols) > 1:
@@ -72,14 +75,14 @@ class Benchmark:
                     raise NotImplemented
 
                 for i, (f, arg) in enumerate(query_funcs):
-                    print(f"progress: running with {i+1}/{len(query_funcs)}")
+                    print(f"progress: running with {i + 1}/{len(query_funcs)}")
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
 
                     # dump to log
                     results.append(OrderedDict({
                         "index": i,
                         "system": "mongo",
-                        "in_format": "bson",
+                        "in_format": "index" if param.get("index", False) else "bson",
                         "out_format": "json",
                         "query": param["desc"],
                         "start_time": round(time.time() - start, 3),
@@ -94,6 +97,17 @@ class Benchmark:
 
 # def _range_sum(db, col, ):
 #     pass
+
+def _update_index(db, cols, field, drop=False):
+    _c = MongoClient('localhost', 27017, maxPoolSize=10000)
+    try:
+        for c in cols:
+            if drop:
+                _c[db][c].drop_index(field)
+            else:
+                _c[db][c].create_index(field)
+    except:
+        pass
 
 
 def _search(db, col, field, value):

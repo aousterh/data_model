@@ -2,3 +2,6 @@ __pycache__
 *.md
 logs/
 type_context_results*/
+*.pdf
+*.png
+*.csv
