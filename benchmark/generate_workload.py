@@ -25,7 +25,7 @@ def getUnique(field):
                         possibleVals.append(record[field])
                     except KeyError as e:
                         pass
-    df[field] = list(set(possibleVals))
+    df[field] = possibleVals
     outfile = '{}/possibleVals.csv'.format(OUTPUT_DIR)
     
     with open(outfile, 'w') as outfile:
