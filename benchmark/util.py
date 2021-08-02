@@ -7,6 +7,8 @@ from resource import getrusage as resource_usage, RUSAGE_SELF
 import subprocess
 from time import time as timestamp
 
+BENCHMARK_DIR = "~/data_model/benchmark"
+
 def unix_time(function, *args, **kwargs):
     '''Return `real`, `sys` and `user` elapsed time, like UNIX's command `time`
     You can calculate the amount of used CPU-time used by your
@@ -85,4 +87,4 @@ def benchmark_bash(cmd, num_iter=10):
 
 def flush_buffer_cache():
     '''Flush the file buffer cache.'''
-    os.system("sudo ./flush_cache.sh")
+    os.system("sudo {}/flush_cache.sh".format(BENCHMARK_DIR))
