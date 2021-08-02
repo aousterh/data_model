@@ -12,11 +12,15 @@ BASE_DIR = "/zq-sample-data"
 DATA = BASE_DIR + "/z"
 WORKLOAD = "../workload/trace/network_log_search_30.ndjson"
 RESULTS_CSV = "end_to_end_zed.csv"
+INPUT_ONE_FILE = True
 
 def data_path(fmt):
-    return DATA + "/" + fmt + "/*"
+    if INPUT_ONE_FILE:
+        return "{}/all.{}".format(DATA, fmt)
+    else:
+        return "{}/{}/*".format(DATA, fmt)
 
-zq_cmd = "zq -i {} {} \"{}\" {}"
+zq_cmd = "zq -validate=false -i {} {} \"{}\" {}"
 zed_lake_cmd = "zed lake query {} \"from logs | {}\""
 
 queries = {
