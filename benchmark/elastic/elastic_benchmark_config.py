@@ -1,8 +1,8 @@
 DATA_DIR="workload/trace/test/"
 
-WORKLOAD_FILE_NAME="network_log_search.ndjson"
+WORKLOAD_FILE_NAME="network_log_search_30.ndjson"
 
-OUTPUT_DIR="workload/trace/test/"
+OUTPUT_DIR="elastic-output/"
 
 OUTPUT_FILE_NAME="query_execution_times.csv"
 
