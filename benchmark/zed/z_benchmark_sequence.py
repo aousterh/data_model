@@ -3,19 +3,25 @@ import json
 import os
 import shutil
 import sys
+import sys
+sys.path.insert(1, "..")
 from util import *
 
 # assume volume is mounted at /zq-sample-data
 BASE_DIR = "/zq-sample-data"
 DATA = BASE_DIR + "/z"
-WORKLOAD = "workload/workload.ndjson"
-RESULTS_CSV = "results.csv"
+WORKLOAD = "../workload/trace/network_log_search_30.ndjson"
+RESULTS_CSV = "end_to_end_zed.csv"
+INPUT_ONE_FILE = True
 
 def data_path(fmt):
-    return DATA + "/" + fmt + "/*"
+    if INPUT_ONE_FILE:
+        return "{}/all.{}".format(DATA, fmt)
+    else:
+        return "{}/{}/*".format(DATA, fmt)
 
-zq_cmd = "zq -i {} -f {} \"{}\" {}"
-zed_lake_cmd = "zed lake query -f {} \"from logs | {}\""
+zq_cmd = "zq -validate=false -i {} {} \"{}\" {}"
+zed_lake_cmd = "zed lake query {} \"from logs | {}\""
 
 queries = {
     'search id.orig_h': 'id.orig_h=={}',
@@ -44,16 +50,23 @@ def run_benchmark(f_input, f_output=sys.stdout, input_fmt="zng",
         arg0 = query_description["arguments"][0]
         zq_query = queries[query].format(arg0)
 
-        if input_fmt == "archive":
-            cmd = zed_lake_cmd.format(output_fmt, zq_query)
+        if output_fmt == "zson":
+            output_fmt_string = "-z"
         else:
-            cmd = zq_cmd.format(input_fmt, output_fmt, zq_query,
+            output_fmt_string = "-f {}".format(output_fmt)
+
+        if input_fmt == "archive":
+            cmd = zed_lake_cmd.format(output_fmt_string, zq_query)
+        else:
+            cmd = zq_cmd.format(input_fmt, output_fmt_string, zq_query,
                                 data_path(input_fmt))
         query_time = time.time()
-        results = unix_time_bash(cmd)
+        results = unix_time_bash(cmd, stdout=subprocess.PIPE)
+
+        n_results = len(results["return"].rstrip("\n").split("\n"))
         fields = [index, "zed", input_fmt, output_fmt, query,
                   round(query_time - start_time, 3), results["real"],
-                  results["user"], results["sys"], arg0]
+                  results["user"], results["sys"], arg0, n_results]
         f_output.write(",".join([str(x) for x in fields]) + "\n")
 
         index += 1
@@ -61,14 +74,13 @@ def run_benchmark(f_input, f_output=sys.stdout, input_fmt="zng",
 def main():
     create_archive()
 
-    formats = [("zng", "zng"),
-#               ("zst", "zst"),
-               ("zst", "zng"),
-               ("archive", "zng")]
+    formats = [("zng", "zson"),
+               ("zst", "zson"),
+               ("archive", "zson")]
 #               ("zson", "zson")]
 
     with open(RESULTS_CSV, 'w') as f_output:
-        f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0\n")
+        f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0,validation\n")
 
         for (input_fmt, output_fmt) in formats:
             flush_buffer_cache()
