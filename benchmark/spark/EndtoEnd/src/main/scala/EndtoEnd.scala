@@ -9,6 +9,9 @@ import scala.util.Try
 object EndtoEnd {
   val PARQUET_PATH = "/zq-sample-data/parquet/"
   val WORKLOAD = "../../workload/trace/network_log_search_30.ndjson"
+  val RESULTS_PATH = "results"
+  val OUTPUT_PATH = "output"
+  val UNION_SEARCH = false
 
   def getListOfParquetFiles(dir: String):List[String] = {
     val d = new File(dir)
@@ -28,7 +31,25 @@ object EndtoEnd {
     })
   }
 
-  def search(spark: SparkSession, files: List[String], ip: String) : Long = {
+  def search(spark: SparkSession, files: List[String], ip: String) : List[DataFrame] = {
+    // load dataframes that contain the search column
+    val dfs = for {
+      x <- files
+      val df = spark.read.parquet(x)
+      if hasColumn(df, "id.orig_h")
+    } yield df
+
+    // issue the query
+    val search_results = dfs.map(df => df.filter(col("id.orig_h") === ip))
+
+    // write the results out as parquet, to ensure the query actually executed
+    for (df <- search_results)
+      df.write.mode("append").parquet(OUTPUT_PATH)
+
+    return search_results
+  }
+
+  def search_union(spark: SparkSession, files: List[String], ip: String) : List[DataFrame] = {
     // load dataframes that contain the search column
     val dfs = for {
       x <- files
@@ -53,7 +74,10 @@ object EndtoEnd {
       .filter(col("id.orig_h") === ip))
       .reduce(_.union(_))
       .toDF()
-    return search_df.count()
+
+    search_df.write.mode("append").parquet(OUTPUT_PATH)
+
+    return List(search_df)
   }
 
   def run_benchmark(spark: SparkSession, files: List[String]) = {
@@ -77,18 +101,26 @@ object EndtoEnd {
       val query = query_description.toSeq(1).toString
 
       val before = System.nanoTime
-      val validation = search(spark, files, arg0)
+      var result_dataframes: List[DataFrame] = List()
+      if (UNION_SEARCH) {
+        result_dataframes = search_union(spark, files, arg0)
+      } else {
+        result_dataframes = search(spark, files, arg0)
+      }
       val runtime = (System.nanoTime - before) / 1e9d
 
+      // count records returned, for validation
+      var count: Long = 0
+      result_dataframes.foreach(count += _.count())
+
       all_results = all_results :+ (index, "spark", "parquet", "dataframe",
-        query, (before - start_time) / 1e9d, runtime, 0.0, 0.0, arg0,
-        validation)
+        query, (before - start_time) / 1e9d, runtime, 0.0, 0.0, arg0, count)
       index += 1
       print(".")
     }
 
     all_results.toDF(results_fields:_*).coalesce(1).write.format("csv")
-      .option("header", "true").save("results")
+      .option("header", "true").save(RESULTS_PATH)
   }
 
   def main(args: Array[String]) {
