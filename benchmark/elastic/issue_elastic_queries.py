@@ -48,7 +48,7 @@ def issueQueries():
     argument_list = []
     validation_list =[]
     
-    reset()
+    restartElastic()
 
     with open(input_directory + workload_file ) as f:
         data = ndjson.load(f)
@@ -91,18 +91,12 @@ def issueQueries():
     output_df.to_csv(output_directory + output_file, na_rep='NaN')
     return output_df
 
-def clearcache():
-    clearcache = "curl -X POST \"localhost:9200/test/_cache/clear?pretty\""
-    os.system(clearcache)
 
 def restartElastic():
     os.system("sudo systemctl stop elasticsearch.service")
     os.system("sudo systemctl start elasticsearch.service")
     os.system("sleep 30")
 
-def reset():
-    clearcache()
-    restartElastic()
 
 # Aggregation prep/clean due to: 
 # "Text fields are not optimised for operations that require per-document field data like aggregations and sorting, so these operations are disabled by default. 

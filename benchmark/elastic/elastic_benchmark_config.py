@@ -1,4 +1,4 @@
-DATA_DIR="workload/trace/test/"
+DATA_DIR="../workload/trace/"
 
 WORKLOAD_FILE_NAME="network_log_search_30.ndjson"
 

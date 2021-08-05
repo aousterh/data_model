@@ -46,7 +46,7 @@ def generateWorkload(query_name, field="id.orig_h", runs=1000, seed=42):
             writer.writerow(query)
 
 def main():
-    generateWorkload("search", "id.orig_h", 30)
+    generateWorkload("search id.orig_h", "id.orig_h", 30)
 
 if __name__ == "__main__":
     main()
