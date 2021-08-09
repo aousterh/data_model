@@ -25,7 +25,7 @@ def getUnique(field):
                         possibleVals.append(record[field])
                     except KeyError as e:
                         pass
-    df[field] = list(set(possibleVals))
+    df[field] = possibleVals
     outfile = '{}/possibleVals.csv'.format(OUTPUT_DIR)
     
     with open(outfile, 'w') as outfile:
@@ -38,7 +38,7 @@ def generateWorkload(query_name, field="id.orig_h", runs=1000, seed=42):
     random.seed(seed)
     for i in range(runs):
         uniqueVal = random.choice(uniqueVals)
-        workload.append({'query': query_name + " " + field, 'arguments': [uniqueVal]})
+        workload.append({'query': query_name , 'arguments': [uniqueVal]})
 
     with open('{}/network_log_search_{}.ndjson'.format(OUTPUT_DIR, runs), 'w') as f:
         writer = ndjson.writer(f, ensure_ascii=False)
@@ -46,7 +46,7 @@ def generateWorkload(query_name, field="id.orig_h", runs=1000, seed=42):
             writer.writerow(query)
 
 def main():
-    generateWorkload("search", "id.orig_h", 30)
+    generateWorkload("search id.orig_h", "id.orig_h", 30)
 
 if __name__ == "__main__":
     main()
