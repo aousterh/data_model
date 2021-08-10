@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+from abc import ABC, abstractmethod
 import json
 import os
+import re
 import shutil
 import sys
 import sys
@@ -10,9 +12,46 @@ from util import *
 # assume volume is mounted at /zq-sample-data
 BASE_DIR = "/zq-sample-data"
 DATA = BASE_DIR + "/z"
-WORKLOAD = "../workload/trace/network_log_search_30.ndjson"
+WORKLOADS = ["../workload/trace/network_log_search_30.ndjson",
+             "../workload/trace/network_log_analytics_30.ndjson"]
 RESULTS_CSV = "end_to_end_zed.csv"
 INPUT_ONE_FILE = True
+
+class Query(ABC):
+    @abstractmethod
+    def get_query(self):
+        pass
+
+    @abstractmethod
+    def get_validation(self, results):
+        pass
+
+    @abstractmethod
+    def __str__(self):
+        pass
+
+class SearchQuery(Query):
+    def get_query(self):
+        return 'id.orig_h=={}'
+
+    def get_validation(self, results):
+        return len(results.rstrip("\n").split("\n"))
+
+    def __str__(self):
+        return "search id.orig_h"
+
+class AnalyticsQuery(Query):
+    def get_query(self):
+        return 'ts >= {} | ts < {} | sum(orig_bytes)'
+
+    def get_validation(self, results):
+        return re.search(r"sum:(\d*) \(uint64\)", results).groups()[0]
+
+    def __str__(self):
+        return "analytics sum orig_bytes"
+
+# mapping from string ID of each query to its Query class
+QUERIES = {str(q): q for q in [SearchQuery(), AnalyticsQuery()]}
 
 def data_path(fmt):
     if INPUT_ONE_FILE:
@@ -22,11 +61,6 @@ def data_path(fmt):
 
 zq_cmd = "zq -validate=false -i {} {} \"{}\" {}"
 zed_lake_cmd = "zed lake query {} \"from logs | {}\""
-
-queries = {
-    'search id.orig_h': 'id.orig_h=={}',
-    'search id.orig_h + count id.resp_h': 'id.orig_h=={} | count() by id.resp_h',
-}
 
 def create_archive():
     log_dir = os.path.join(os.getcwd(), "logs")
@@ -41,14 +75,23 @@ def create_archive():
 
 def run_benchmark(f_input, f_output=sys.stdout, input_fmt="zng",
                   output_fmt="zng"):
+    flush_buffer_cache()
+
     start_time = time.time()
     index = 0
 
     for line in f_input:
         query_description = json.loads(line)
-        query = query_description["query"]
-        arg0 = query_description["arguments"][0]
-        zq_query = queries[query].format(arg0)
+        query = QUERIES[query_description["query"]]
+        args = query_description["arguments"]
+
+        if len(args) == 1:
+            zq_query = query.get_query().format(args[0])
+        elif len(args) == 2:
+            zq_query = query.get_query().format(args[0], args[1])
+        else:
+            print("ERROR: unrecognized number of arguments {}".format(len(args)))
+            exit()
 
         if output_fmt == "zson":
             output_fmt_string = "-z"
@@ -63,10 +106,10 @@ def run_benchmark(f_input, f_output=sys.stdout, input_fmt="zng",
         query_time = time.time()
         results = unix_time_bash(cmd, stdout=subprocess.PIPE)
 
-        n_results = len(results["return"].rstrip("\n").split("\n"))
+        validation = query.get_validation(results["return"])
         fields = [index, "zed", input_fmt, output_fmt, query,
                   round(query_time - start_time, 3), results["real"],
-                  results["user"], results["sys"], arg0, n_results]
+                  results["user"], results["sys"], args[0], validation]
         f_output.write(",".join([str(x) for x in fields]) + "\n")
 
         index += 1
@@ -82,11 +125,10 @@ def main():
     with open(RESULTS_CSV, 'w') as f_output:
         f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0,validation\n")
 
-        for (input_fmt, output_fmt) in formats:
-            flush_buffer_cache()
-
-            with open(WORKLOAD, 'r') as f_input:
-                run_benchmark(f_input, f_output, input_fmt, output_fmt)
+        for workload in WORKLOADS:
+            for (input_fmt, output_fmt) in formats:
+                with open(workload, 'r') as f_input:
+                    run_benchmark(f_input, f_output, input_fmt, output_fmt)
     
 if __name__ == '__main__':
     main()
