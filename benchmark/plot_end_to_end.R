@@ -26,9 +26,10 @@ ggplot(data, aes(x=index, y=real, color=interaction(system, in_format))) +
 	     geom_point() +
 	     geom_line() +
 	     labs(x="Query Number", y="Query Time (s)") +
+	     facet_grid(. ~ query) +
 	     scale_color_discrete(name="System.Format")
 
-ggsave("query_time_by_index.pdf", width=7, height=6)
+ggsave("query_time_by_index.pdf", width=8, height=5)
 
 
 ggplot(data, aes(x=index, y=real, color=interaction(system, in_format))) +
@@ -38,26 +39,28 @@ ggplot(data, aes(x=index, y=real, color=interaction(system, in_format))) +
 	     scale_color_discrete(name="System.Format") +
 	     coord_cartesian(ylim=c(0, 2.2))
 
-ggsave("query_time_by_index_zoom.pdf")
+ggsave("query_time_by_index_zoom.pdf", width=8, height=5)
 
 
 data_skip_warmup = data[data$index >= 10,]
 ggplot(data_skip_warmup, aes(real, color=interaction(system, in_format))) +
 	stat_ecdf() +
 	labs(x="Query Time (s)", y="CDF") +
+	facet_grid(. ~ query) +
 	scale_color_discrete(name="System.Format")
 
-ggsave("query_time_cdf.pdf")
+ggsave("query_time_cdf.pdf", width=8, height=5)
 
 
 ggplot(data_skip_warmup, aes(x=validation, y=real, color=interaction(system, in_format))) +
 			 geom_point() +
 			 stat_smooth(method='lm', aes(color=interaction(system, in_format)), se=FALSE, size=0.5) +
-			 labs(x="Number of Matching Records", y="Query Time (s)") +
+			 labs(x="Number of Results (sum or number of matching records)", y="Query Time (s)") +
+			 facet_grid(. ~ query) +
 			 scale_color_discrete(name="System.Format")
 
-ggsave("query_time_by_num_results.pdf")
+ggsave("query_time_by_results.pdf", width=8, height=5)
 
 
-summary(data$validation)
-tapply(data$real, interaction(data$system, data$in_format), summary)
+tapply(data$validation, data$query, summary)
+tapply(data$real, interaction(data$system, data$in_format, data$query), summary)
