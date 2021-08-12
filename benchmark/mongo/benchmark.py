@@ -114,7 +114,7 @@ class Benchmark:
                         "argument_0": arg,
                         "validation": len(r["return"]) if wc["kind"] == "search" else r["return"],
                     }))
-            util.write_csv(results, f"mongo-{wc['kind']}-{name}.csv")
+            util.write_csv(results, f"mongo-{wc['kind']}-{name}{'-index' if param.get('index', False) else ''}.csv")
 
 
 def _range_sum(db, col, field, target, start, end):
