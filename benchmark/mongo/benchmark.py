@@ -92,7 +92,7 @@ class Benchmark:
                         values = [row["arguments"] for row in util.read_trace(tf)]
                         values = values[:param.get("batch_size", len(values))]
                     for _start, _end in values:
-                        query_funcs.append((make_exec(_start, _end), [_start, _end]))
+                        query_funcs.append((make_exec(_start, _end), f"{_start} {_end}"))
                 else:
                     raise NotImplemented
 
