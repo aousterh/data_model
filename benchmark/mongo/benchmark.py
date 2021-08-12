@@ -111,7 +111,7 @@ class Benchmark:
                         "real": r["real"],
                         "user": r["user"],
                         "sys": r["sys"],
-                        "argument_0": str(" ".join(arg)),
+                        "argument_0": arg,
                         "validation": len(r["return"]) if wc["kind"] == "search" else r["return"],
                     }))
             util.write_csv(results, f"mongo-{wc['kind']}-{name}.csv")
@@ -125,7 +125,7 @@ def _range_sum(db, col, field, target, start, end):
                              "$lt": end}}},
          {"$group": {"_id": None, target: {"$sum": f"${target}"}}}]
     )
-    return list(r)
+    return list(r)[0][target]
 
 
 def _update_index(db, cols, field, drop=False):
