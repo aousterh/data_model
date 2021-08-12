@@ -44,10 +44,10 @@ class Benchmark:
                 results = list()
                 query_funcs = list()
 
-                if wc["kind"] == "search":
-                    _update_index(self._db, self._cols, param["field"],
-                                  drop=not param.get("index", False))
+                _update_index(self._db, self._cols, param["field"],
+                              drop=not param.get("index", False))
 
+                if wc["kind"] == "search":
                     def make_exec(_v):
                         def _exec():
                             if len(self._cols) > 1:
@@ -69,8 +69,30 @@ class Benchmark:
                         query_funcs.append((make_exec(v), v))
 
                 elif wc["kind"] == "analytics":
-                    raise NotImplemented
+                    # TBD
+                    def make_exec(_s, _e):
+                        def _exec():
+                            if len(self._cols) > 1:
+                                pool = Pool(self._meta.get("num_thread", 1))
+                                _output = pool.starmap(_range_sum, [(self._db, c,
+                                                                     param["field"],
+                                                                     param["target"], _s, _e)
+                                                                    for c in self._cols])
+                            else:
+                                _output = _range_sum(self._db, self._cols[0],
+                                                     param["field"],
+                                                     param["target"], _s, _e)
+                            return _output
 
+                        return _exec
+
+                    values = list()
+                    tf = param.get("trace_file", None)
+                    if tf:
+                        values = [row["arguments"] for row in util.read_trace(tf)]
+                        values = values[:param.get("batch_size", len(values))]
+                    for _start, _end in values:
+                        query_funcs.append((make_exec(_start, _end), [_start, _end]))
                 else:
                     raise NotImplemented
 
@@ -89,14 +111,22 @@ class Benchmark:
                         "real": r["real"],
                         "user": r["user"],
                         "sys": r["sys"],
-                        "argument_0": arg,
-                        "validation": len(r["return"]),
+                        "argument_0": str(" ".join(arg)),
+                        "validation": len(r["return"]) if wc["kind"] == "search" else r["return"],
                     }))
             util.write_csv(results, f"mongo-{wc['kind']}-{name}.csv")
 
 
-# def _range_sum(db, col, ):
-#     pass
+def _range_sum(db, col, field, target, start, end):
+    _c = MongoClient('localhost', 27017, maxPoolSize=10000)
+
+    r = _c[db][col].aggregate(
+        [{"$match": {field: {"$gt": start,
+                             "$lt": end}}},
+         {"$group": {"_id": None, target: {"$sum": f"${target}"}}}]
+    )
+    return list(r)
+
 
 def _update_index(db, cols, field, drop=False):
     _c = MongoClient('localhost', 27017, maxPoolSize=10000)
