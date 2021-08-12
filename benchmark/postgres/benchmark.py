@@ -7,7 +7,6 @@ from multiprocessing import Pool
 from collections import OrderedDict
 
 import util
-import psycopg2
 
 
 class Benchmark:
@@ -48,12 +47,12 @@ class Benchmark:
                 results = list()
                 query_funcs = list()
 
-                if wc["kind"] == "search":
-                    # create / drop index
-                    for t in tables:
-                        _update_index(t, param["field"],
-                                      drop=not param.get("index", False))
+                # create / drop index
+                for t in tables:
+                    _update_index(t, param["field"],
+                                  drop=not param.get("index", False))
 
+                if wc["kind"] == "search":
                     def make_exec(_v):
                         def _exec():
                             if len(tables) > 1:
@@ -76,20 +75,46 @@ class Benchmark:
                         query_funcs.append((make_exec(v), v))
 
                 elif wc["kind"] == "analytics":
-                    raise NotImplemented
+                    def make_exec(_s, _e):
+                        def _exec():
+                            if len(tables) > 1:
+                                pool = Pool(self._meta.get("num_thread", 1))
+                                _output = pool.starmap(_range_sum, [(t, param["field"],
+                                                                    param["target"], _s, _e)
+                                                                    for t in tables])
+                            else:
+                                _output = _range_sum(tables[0], param["field"],
+                                                     param["target"], _s, _e)
+                            return _output
 
+                        return _exec
+
+                    # iterate the values
+                    values = list()
+                    tf = param.get("trace_file", None)
+                    if tf:
+                        values = [row["arguments"] for row in util.read_trace(tf)]
+                        values = values[:param.get("batch_size", len(values))]
+                    for _start, _end in values:
+                        query_funcs.append((make_exec(_start, _end), f"{_start} {_end}"))
                 else:
                     raise NotImplemented
 
+                # execute
                 for i, (f, arg) in enumerate(query_funcs):
                     print(f"progress: running with {i + 1}/{len(query_funcs)}")
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
 
                     # dump to log
+                    if wc["kind"] == "search":
+                        val = sum(len(t) for t in r["return"] if t is not None)
+                    elif wc["kind"] == "analytics":
+                        val = sum(t[0][0] for t in r["return"] if t is not None)
+
                     results.append(OrderedDict({
                         "index": i,
                         "system": "postgres",
-                        "in_format": "index" if param.get("index", False) else "bson",
+                        "in_format": "index" if param.get("index", False) else "table",
                         "out_format": "table",
                         "query": param["desc"],
                         "start_time": round(time.time() - start, 3),
@@ -97,9 +122,9 @@ class Benchmark:
                         "user": r["user"],
                         "sys": r["sys"],
                         "argument_0": arg,
-                        "validation": sum(len(t) for t in r["return"] if t is not None)
+                        "validation": val,
                     }))
-            util.write_csv(results, f"postgres-{wc['kind']}-{name}.csv")
+            util.write_csv(results, f"postgres-{wc['kind']}-{name}{'-index' if param.get('index', False) else ''}.csv")
 
 
 def _update_index(_t, _k, drop=False):
@@ -115,6 +140,22 @@ def _update_index(_t, _k, drop=False):
         pass
 
 
+def _range_sum(_t, _field, _target, _start, _end):
+    _cursor = util.db_conn().cursor()
+    s = f"""
+        SELECT SUM ("{_target}") AS sum
+        FROM {_t}
+        WHERE "{_field}" < '{_end}' AND "{_field}" > '{_start}';
+    """
+    r = None
+    try:
+        _cursor.execute(s)
+        r = _cursor.fetchall()
+    except Exception as e:
+        pass
+    return r
+
+
 def _search(_t, _k, _v):
     _cursor = util.db_conn().cursor()
     s = f"""
@@ -125,7 +166,7 @@ def _search(_t, _k, _v):
     try:
         _cursor.execute(s)
         r = _cursor.fetchall()
-    except psycopg2.errors.UndefinedColumn:
+    except Exception as e:
         pass
     return r
 
