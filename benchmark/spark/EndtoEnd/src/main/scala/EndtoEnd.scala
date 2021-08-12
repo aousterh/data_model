@@ -11,16 +11,6 @@ object EndtoEnd {
   val WORKLOAD = "../../workload/trace/network_log_search_30.ndjson"
   val RESULTS_PATH = "results"
   val OUTPUT_PATH = "output"
-  val UNION_SEARCH = false
-
-  def getListOfParquetFiles(dir: String):List[String] = {
-    val d = new File(dir)
-    var l = List[File]()
-    if (d.exists && d.isDirectory) {
-       l = d.listFiles.filter(_.isFile).toList
-    }
-    l.map(f => f.toString()).filter(_.endsWith(".parquet"))
-  }
 
   def hasColumn(df: DataFrame, path: String) = Try(df(path)).isSuccess
 
@@ -31,61 +21,104 @@ object EndtoEnd {
     })
   }
 
-  def search(spark: SparkSession, files: List[String], ip: String) : List[DataFrame] = {
-    // load dataframes that contain the search column
-    val dfs = for {
-      x <- files
-      val df = spark.read.parquet(x)
-      if hasColumn(df, "id.orig_h")
-    } yield df
-
-    // issue the query
-    val search_results = dfs.map(df => df.filter(col("id.orig_h") === ip))
-
-    // write the results out as parquet, to ensure the query actually executed
-    for (df <- search_results)
-      df.write.mode("append").parquet(OUTPUT_PATH)
-
-    return search_results
+  abstract class Query
+  {
+    def run(spark: SparkSession, files: List[String], ip: String) : List[DataFrame]
+    def get_validation(result_dfs: List[DataFrame]) : Long
   }
 
-  def search_union(spark: SparkSession, files: List[String], ip: String) : List[DataFrame] = {
-    // load dataframes that contain the search column
-    val dfs = for {
-      x <- files
-      val df = spark.read.parquet(x)
-      if hasColumn(df, "id.orig_h")
-    } yield df
+  class SearchQuery extends Query
+  {
+    def run(spark: SparkSession, files: List[String], ip: String) : List[DataFrame] = {
+      // load dataframes that contain the search column
+      val dfs = for {
+        x <- files
+        val df = spark.read.parquet(x)
+        if hasColumn(df, "id.orig_h")
+      } yield df
 
-    // rename path fields for smb types because union can't handle the mismatched
-    // types of string (smb_files and smb_mapping) and array of strings (smtp)
-    val cleaned_dfs = for (df <- dfs) yield {
-      if (df.columns.contains("path") && df.schema("path").dataType == StringType)
-        df.withColumnRenamed("path", "path_smb")
-      else
-        df
+      // issue the query
+      val search_results = dfs.map(df => df.filter(col("id.orig_h") === ip))
+
+      // write the results out as parquet, to ensure the query actually executed
+      for (df <- search_results)
+        df.write.mode("append").parquet(OUTPUT_PATH)
+
+      return search_results
     }
 
-    // create the uber schema
-    val all_columns = cleaned_dfs.map(df => df.columns.toSet).reduce(_ ++ _)
+    def get_validation(result_dfs: List[DataFrame]) : Long = {
+      // count records returned
+      return result_dfs.map(df => df.count()).sum
+    }
 
-    // issue the query, use customSelect to uber the results as you go
-    val search_df = cleaned_dfs.map(df => df.select(customSelect(df, all_columns):_*)
-      .filter(col("id.orig_h") === ip))
-      .reduce(_.union(_))
-      .toDF()
+    override def toString() : String = {
+      return "search id.orig_h"
+    }
+  }
 
-    search_df.write.mode("append").parquet(OUTPUT_PATH)
+  class SearchUberQuery extends Query
+  {
+    def run(spark: SparkSession, files: List[String], ip: String) : List[DataFrame] = {
+      // load dataframes that contain the search column
+      val dfs = for {
+        x <- files
+        val df = spark.read.parquet(x)
+        if hasColumn(df, "id.orig_h")
+      } yield df
 
-    return List(search_df)
+      // rename path fields for smb types because union can't handle the mismatched
+      // types of string (smb_files and smb_mapping) and array of strings (smtp)
+      val cleaned_dfs = for (df <- dfs) yield {
+        if (df.columns.contains("path") && df.schema("path").dataType == StringType)
+          df.withColumnRenamed("path", "path_smb")
+        else
+          df
+      }
+
+      // create the uber schema
+      val all_columns = cleaned_dfs.map(df => df.columns.toSet).reduce(_ ++ _)
+
+      // issue the query, use customSelect to uber the results as you go
+      val search_df = cleaned_dfs.map(df => df.select(customSelect(df, all_columns):_*)
+        .filter(col("id.orig_h") === ip))
+        .reduce(_.union(_))
+        .toDF()
+
+      search_df.write.mode("append").parquet(OUTPUT_PATH)
+
+      return List(search_df)
+    }
+
+    def get_validation(result_dfs: List[DataFrame]) : Long = {
+      // count records returned
+      return result_dfs.map(df => df.count()).sum
+    }
+
+    override def toString() : String = {
+      return "search id.orig_h uber"
+    }
+  }
+
+  // mapping from string ID of each query to its Query class
+  val QUERY_ARRAY = Array(new SearchQuery(), new SearchUberQuery())
+  val QUERY_MAP = QUERY_ARRAY.map(q => q.toString() -> q).toMap
+
+  def getListOfParquetFiles(dir: String):List[String] = {
+    val d = new File(dir)
+    var l = List[File]()
+    if (d.exists && d.isDirectory) {
+       l = d.listFiles.filter(_.isFile).toList
+    }
+    l.map(f => f.toString()).filter(_.endsWith(".parquet"))
   }
 
   def run_benchmark(spark: SparkSession, files: List[String]) = {
     import spark.implicits._
 
     // read in queries to execute
-    val queries = spark.read.json(WORKLOAD).select(
-      col("arguments").getItem(0).as("arg0"), col("query").as("query")).collect()
+    val queries = spark.read.json(WORKLOAD).select(col("query").as("query"),
+      col("arguments").getItem(0).as("arg0")).collect()
 
     // seq for storing results
     var all_results : Seq[(Int, String, String, String, String, Double, Double,
@@ -97,24 +130,18 @@ object EndtoEnd {
     var start_time = System.nanoTime
     var index = 0
     for (query_description <- queries) {
-      val arg0 = query_description.toSeq(0).toString
-      val query = query_description.toSeq(1).toString
+      val query = QUERY_MAP(query_description.toSeq(0).toString())
+      val arg0 = query_description.toSeq(1).toString
 
       val before = System.nanoTime
-      var result_dataframes: List[DataFrame] = List()
-      if (UNION_SEARCH) {
-        result_dataframes = search_union(spark, files, arg0)
-      } else {
-        result_dataframes = search(spark, files, arg0)
-      }
+      val result_dataframes = query.run(spark, files, arg0)
       val runtime = (System.nanoTime - before) / 1e9d
 
-      // count records returned, for validation
-      var count: Long = 0
-      result_dataframes.foreach(count += _.count())
+      val validation = query.get_validation(result_dataframes)
 
       all_results = all_results :+ (index, "spark", "parquet", "dataframe",
-        query, (before - start_time) / 1e9d, runtime, 0.0, 0.0, arg0, count)
+        query.toString(), (before - start_time) / 1e9d, runtime, 0.0, 0.0, arg0,
+        validation)
       index += 1
       print(".")
     }
@@ -124,7 +151,7 @@ object EndtoEnd {
   }
 
   def main(args: Array[String]) {
-    val spark = SparkSession.builder.appName("Simple Application").getOrCreate()
+    val spark = SparkSession.builder.appName("Spark Benchmark").getOrCreate()
 
     val parquet_files = getListOfParquetFiles(PARQUET_PATH)
     run_benchmark(spark, parquet_files)
