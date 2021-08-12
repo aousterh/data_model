@@ -40,9 +40,8 @@ def getUnique(field):
         df.to_csv(outfile, index=False, mode='a')
     return df[field]
 
-def generateSearchWorkload(query_name, field="id.orig_h", runs=1000, seed=42):
+def generateSearchWorkload(query_name, uniqueVals, field="id.orig_h", runs=1000, seed=42):
     workload = []
-    uniqueVals = getUnique(field)
     random.seed(seed)
     for i in range(runs):
         uniqueVal = random.choice(uniqueVals)
@@ -80,8 +79,13 @@ def generateAnalyticsWorkload(query_name, window_size_s=5, runs=1000, seed=42):
             writer.writerow({'query': query_name, 'arguments':
                              [t.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for t in args]})
 
-def main():
-    generateSearchWorkload("search id.orig_h", "id.orig_h", 30)
+def main(newUniqueRun=False):
+    if newUniqueRun:
+        uniqueVals = getUnique("id.orig_h")
+    else:
+        uniqueVals = pd.read_csv('{}/{}'.format(OUTPUT_DIR, UNIQUE_VALS_FILE), delimiter='\n')["id.orig_h"].to_list()
+    
+    generateSearchWorkload("search id.orig_h", uniqueVals, "id.orig_h", 30)
     generateAnalyticsWorkload("analytics sum orig_bytes", 5, 30)
 
 if __name__ == "__main__":
