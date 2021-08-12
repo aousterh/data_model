@@ -1,4 +1,4 @@
-.PHONY: stop start load run
+.PHONY: install stop start load run
 DB := zed
 COL := zeek  # comment out to use multiple collections
 CONFIG := default

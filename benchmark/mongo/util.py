@@ -107,7 +107,7 @@ def read_trace(name):
 
 
 def main():
-    read_trace("network_log_search_1000.ndjson")
+    read_trace("network_log_search_30.ndjson")
 
 
 if __name__ == '__main__':
