@@ -37,7 +37,7 @@ def load():
             print(f"loading dataframes {i + 1}/{len(fs)}")
             df = pd.read_json(f, lines=True)
             name = os.path.basename(f).replace(".ndjson", "")
-            df.to_sql(name, con=conn, if_exists='replace', index=True)
+            df.to_sql(name, con=conn, if_exists='replace', index=True, method='multi')
 
 
 if __name__ == '__main__':
