@@ -16,6 +16,18 @@ workload_dir = path_join(_dir, "..", "workload")
 dataset_info = path_join(workload_dir, "dataset.yaml")
 trace_dir = path_join(workload_dir, "trace")
 
+import sqlalchemy
+import psycopg2
+
+
+def db_conn(conn_str='postgresql://zed:zed@localhost/zed',
+            use_sqlalchemy=False):
+    if use_sqlalchemy:
+        db = sqlalchemy.create_engine(conn_str)
+        return db.connect()
+    else:
+        return psycopg2.connect(conn_str)
+
 
 def workload_config(name):
     with open(path_join(workload_dir, name + ".yaml")) as f:

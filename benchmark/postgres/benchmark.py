@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 
 import os
-import time
 import yaml
+import time
 from multiprocessing import Pool
 from collections import OrderedDict
-
-from pymongo import MongoClient
 
 import util
 
@@ -19,23 +17,28 @@ class Benchmark:
             self._meta = self._config.get("meta", {})
             self._benchmark = self._config.get("benchmark", {})
 
-        self._db: str = os.environ['DB']
-        self._cli, self._cols = None, None
+        self.conn = None
 
     def connect(self):
-        self._cli = MongoClient('localhost', 27017, maxPoolSize=10000)
-        self._cols = self._cli[self._db].list_collection_names()
-
-        _col = os.environ.get("COL", None)
-        if _col:
-            assert _col in self._cols
-            self._cols = [_col]
+        self.conn = util.db_conn()
         return self
 
     def run(self):
+        cursor = self.conn.cursor()
+
+        # get all tables
+        cursor.execute("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE (table_schema = 'public')
+            ORDER BY table_name
+        """)
+        tables = [r[0] for r in cursor.fetchall()]
+
         if self._meta.get("warmup", True):
             raise NotImplemented
 
+        # run benchmarks
         for workload in self._benchmark:
             wc = util.workload_config(workload)
 
@@ -44,22 +47,25 @@ class Benchmark:
                 results = list()
                 query_funcs = list()
 
-                _update_index(self._db, self._cols, param["field"],
-                              drop=not param.get("index", False))
+                # create / drop index
+                for t in tables:
+                    _update_index(t, param["field"],
+                                  drop=not param.get("index", False))
 
                 if wc["kind"] == "search":
                     def make_exec(_v):
                         def _exec():
-                            if len(self._cols) > 1:
+                            if len(tables) > 1:
                                 pool = Pool(self._meta.get("num_thread", 1))
-                                _output = pool.starmap(_search, [(self._db, c, param["field"], _v)
-                                                                 for c in self._cols])
+                                _output = pool.starmap(_search, [(t, param["field"], _v)
+                                                                 for t in tables])
                             else:
-                                _output = _search(self._db, self._cols[0], param["field"], _v)
+                                _output = _search(tables[0], param["field"], _v)
                             return _output
 
                         return _exec
 
+                    # iterate the values
                     values = list()
                     tf = param.get("trace_file", None)
                     if tf:
@@ -69,23 +75,21 @@ class Benchmark:
                         query_funcs.append((make_exec(v), v))
 
                 elif wc["kind"] == "analytics":
-                    # TBD
                     def make_exec(_s, _e):
                         def _exec():
-                            if len(self._cols) > 1:
+                            if len(tables) > 1:
                                 pool = Pool(self._meta.get("num_thread", 1))
-                                _output = pool.starmap(_range_sum, [(self._db, c,
-                                                                     param["field"],
-                                                                     param["target"], _s, _e)
-                                                                    for c in self._cols])
+                                _output = pool.starmap(_range_sum, [(t, param["field"],
+                                                                    param["target"], _s, _e)
+                                                                    for t in tables])
                             else:
-                                _output = _range_sum(self._db, self._cols[0],
-                                                     param["field"],
+                                _output = _range_sum(tables[0], param["field"],
                                                      param["target"], _s, _e)
                             return _output
 
                         return _exec
 
+                    # iterate the values
                     values = list()
                     tf = param.get("trace_file", None)
                     if tf:
@@ -96,53 +100,75 @@ class Benchmark:
                 else:
                     raise NotImplemented
 
+                # execute
                 for i, (f, arg) in enumerate(query_funcs):
                     print(f"progress: running with {i + 1}/{len(query_funcs)}")
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
 
                     # dump to log
+                    if wc["kind"] == "search":
+                        val = sum(len(t) for t in r["return"] if t is not None)
+                    elif wc["kind"] == "analytics":
+                        val = sum(t[0][0] for t in r["return"] if t is not None)
+
                     results.append(OrderedDict({
                         "index": i,
-                        "system": "mongo",
-                        "in_format": "index" if param.get("index", False) else "bson",
-                        "out_format": "json",
+                        "system": "postgres",
+                        "in_format": "index" if param.get("index", False) else "table",
+                        "out_format": "table",
                         "query": param["desc"],
                         "start_time": round(time.time() - start, 3),
                         "real": r["real"],
                         "user": r["user"],
                         "sys": r["sys"],
                         "argument_0": arg,
-                        "validation": len(r["return"]) if wc["kind"] == "search" else r["return"],
+                        "validation": val,
                     }))
-            util.write_csv(results, f"mongo-{wc['kind']}-{name}{'-index' if param.get('index', False) else ''}.csv")
+            util.write_csv(results, f"postgres-{wc['kind']}-{name}{'-index' if param.get('index', False) else ''}.csv")
 
 
-def _range_sum(db, col, field, target, start, end):
-    _c = MongoClient('localhost', 27017, maxPoolSize=10000)
-
-    r = _c[db][col].aggregate(
-        [{"$match": {field: {"$gt": start,
-                             "$lt": end}}},
-         {"$group": {"_id": None, target: {"$sum": f"${target}"}}}]
-    )
-    return list(r)[0][target]
-
-
-def _update_index(db, cols, field, drop=False):
-    _c = MongoClient('localhost', 27017, maxPoolSize=10000)
+def _update_index(_t, _k, drop=False):
+    _cursor = util.db_conn().cursor()
+    s = f"""
+        CREATE INDEX "{_k}" ON {_t} ("{_k}" ASC);
+    """ if not drop else """
+        DROP INDEX "{_k}";
+    """
     try:
-        for c in cols:
-            if drop:
-                _c[db][c].drop_index(field)
-            else:
-                _c[db][c].create_index(field)
-    except:
+        _cursor.execute(s)
+    except Exception as e:
         pass
 
 
-def _search(db, col, field, value):
-    _c = MongoClient('localhost', 27017, maxPoolSize=10000)
-    return list(_c[db][col].find({field: value}))
+def _range_sum(_t, _field, _target, _start, _end):
+    _cursor = util.db_conn().cursor()
+    s = f"""
+        SELECT SUM ("{_target}") AS sum
+        FROM {_t}
+        WHERE "{_field}" < '{_end}' AND "{_field}" > '{_start}';
+    """
+    r = None
+    try:
+        _cursor.execute(s)
+        r = _cursor.fetchall()
+    except Exception as e:
+        pass
+    return r
+
+
+def _search(_t, _k, _v):
+    _cursor = util.db_conn().cursor()
+    s = f"""
+        SELECT * FROM {_t}
+        WHERE ("{_k}" = '{_v}');
+    """
+    r = None
+    try:
+        _cursor.execute(s)
+        r = _cursor.fetchall()
+    except Exception as e:
+        pass
+    return r
 
 
 def main():
