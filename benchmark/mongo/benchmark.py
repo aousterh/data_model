@@ -133,7 +133,7 @@ def _update_index(db, cols, field, drop=False):
     try:
         for c in cols:
             if drop:
-                _c[db][c].drop_index(field)
+                _c[db][c].drop_index(str(field) + "_1")
             else:
                 _c[db][c].create_index(field)
     except Exception as e:
