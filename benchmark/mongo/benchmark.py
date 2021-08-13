@@ -136,8 +136,8 @@ def _update_index(db, cols, field, drop=False):
                 _c[db][c].drop_index(field)
             else:
                 _c[db][c].create_index(field)
-    except:
-        pass
+    except Exception as e:
+        print(e)
 
 
 def _search(db, col, field, value):

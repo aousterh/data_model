@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import yaml
 import time
 from multiprocessing import Pool
@@ -51,7 +52,6 @@ class Benchmark:
                 for t in tables:
                     _update_index(t, param["field"],
                                   drop=not param.get("index", False))
-
                 if wc["kind"] == "search":
                     def make_exec(_v):
                         def _exec():
@@ -128,16 +128,22 @@ class Benchmark:
 
 
 def _update_index(_t, _k, drop=False):
-    _cursor = util.db_conn().cursor()
+    _conn = util.db_conn()
+    _cursor = _conn.cursor()
+    idx_name = f"{_t}_{_k.replace('.', '_')}"
+
     s = f"""
-        CREATE INDEX "{_k}" ON {_t} ("{_k}" ASC);
-    """ if not drop else """
-        DROP INDEX "{_k}";
+        CREATE INDEX "{idx_name}" ON {_t} ("{_k}");
+    """ if not drop else f"""
+        DROP INDEX "{idx_name}";
     """
     try:
         _cursor.execute(s)
+        _conn.commit()
+        _cursor.close()
+        print(_t, s, "success")
     except Exception as e:
-        pass
+        print(_t, e)
 
 
 def _range_sum(_t, _field, _target, _start, _end):
@@ -151,8 +157,9 @@ def _range_sum(_t, _field, _target, _start, _end):
     try:
         _cursor.execute(s)
         r = _cursor.fetchall()
+        print(_t, s, "success")
     except Exception as e:
-        pass
+        print(_t, e)
     return r
 
 
@@ -166,8 +173,9 @@ def _search(_t, _k, _v):
     try:
         _cursor.execute(s)
         r = _cursor.fetchall()
+        print(_t, s, "success")
     except Exception as e:
-        pass
+        print(_t, e)
     return r
 
 

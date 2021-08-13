@@ -6,5 +6,7 @@ meta:
   num_thread: 4
   seed: 42
 benchmark:
-#  - network_log_search
+  - network_log_search
   - network_log_analytics
+  - network_log_search_no_index
+  - network_log_analytics_no_index

@@ -1,0 +1,11 @@
+kind: analytics
+dataset:
+  name: network_log
+query:
+  range_sum_orig_bytes:
+    field: ts
+    target: orig_bytes
+    index: false
+    trace_file: "network_log_analytics_30.ndjson"
+    batch_size: 30
+    desc: "sum orig_bytes"
