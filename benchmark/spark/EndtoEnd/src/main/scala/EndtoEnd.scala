@@ -1,7 +1,8 @@
 /* EndtoEnd.scala */
 import java.io.File
+import java.sql.Timestamp
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.functions.{col, lit}
+import org.apache.spark.sql.functions.{col, lit, sum, to_timestamp}
 import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import scala.sys.process._
 import scala.util.Try
@@ -9,6 +10,7 @@ import scala.util.Try
 object EndtoEnd {
   val PARQUET_PATH = "/zq-sample-data/parquet/"
   val WORKLOAD = "../../workload/trace/network_log_search_30.ndjson"
+//  val WORKLOAD = "../../workload/trace/network_log_analytics_30.ndjson"
   val RESULTS_PATH = "results"
   val OUTPUT_PATH = "output"
 
@@ -23,13 +25,15 @@ object EndtoEnd {
 
   abstract class Query
   {
-    def run(spark: SparkSession, files: List[String], ip: String) : List[DataFrame]
+    def run(spark: SparkSession, files: List[String], args: Array[String]) : List[DataFrame]
     def get_validation(result_dfs: List[DataFrame]) : Long
   }
 
   class SearchQuery extends Query
   {
-    def run(spark: SparkSession, files: List[String], ip: String) : List[DataFrame] = {
+    def run(spark: SparkSession, files: List[String], args: Array[String]) : List[DataFrame] = {
+      val ip = args(0)
+
       // load dataframes that contain the search column
       val dfs = for {
         x <- files
@@ -59,7 +63,9 @@ object EndtoEnd {
 
   class SearchUberQuery extends Query
   {
-    def run(spark: SparkSession, files: List[String], ip: String) : List[DataFrame] = {
+    def run(spark: SparkSession, files: List[String], args: Array[String]) : List[DataFrame] = {
+      val ip = args(0)
+
       // load dataframes that contain the search column
       val dfs = for {
         x <- files
@@ -85,6 +91,7 @@ object EndtoEnd {
         .reduce(_.union(_))
         .toDF()
 
+      // write the results out as parquet, to ensure the query actually executed
       search_df.write.mode("append").parquet(OUTPUT_PATH)
 
       return List(search_df)
@@ -100,8 +107,46 @@ object EndtoEnd {
     }
   }
 
+  class AnalyticsSumOrigBytesQuery extends Query
+  {
+    def run(spark: SparkSession, files: List[String], args: Array[String]) : List[DataFrame] = {
+      // load dataframes that contain the aggregation column, cast ts column as a timestamp
+      val dfs = for {
+        x <- files
+        val df = spark.read.parquet(x).withColumn("ts", to_timestamp(col("ts")))
+        if hasColumn(df, "orig_bytes")
+      } yield df
+
+      // convert the timestamps to SQL TIMESTAMP format
+      val ts_min = Timestamp.valueOf(args(0).replace("T", " ").replace("Z", ""))
+      val ts_max = Timestamp.valueOf(args(1).replace("T", " ").replace("Z", ""))
+
+      // issue the query
+      val analytics_df = dfs.map(df => df.filter(col("ts") >= ts_min && col("ts") < ts_max)
+        .select(col("orig_bytes"))
+        .agg(sum("orig_bytes")))
+        .reduce(_.union(_))
+        .agg(sum("sum(orig_bytes)"))
+        .select(col("sum(sum(orig_bytes))").as("sum"))
+
+      // write the results out as parquet, to ensure the query actually executed
+      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
+
+      return List(analytics_df)
+    }
+
+    def get_validation(result_dfs: List[DataFrame]) : Long = {
+      return result_dfs(0).collect()(0)(0).asInstanceOf[Long]
+    }
+
+    override def toString() : String = {
+      return "analytics sum orig_bytes"
+    }
+  }
+
   // mapping from string ID of each query to its Query class
-  val QUERY_ARRAY = Array(new SearchQuery(), new SearchUberQuery())
+  val QUERY_ARRAY = Array(new SearchQuery(), new SearchUberQuery(),
+    new AnalyticsSumOrigBytesQuery())
   val QUERY_MAP = QUERY_ARRAY.map(q => q.toString() -> q).toMap
 
   def getListOfParquetFiles(dir: String):List[String] = {
@@ -118,7 +163,8 @@ object EndtoEnd {
 
     // read in queries to execute
     val queries = spark.read.json(WORKLOAD).select(col("query").as("query"),
-      col("arguments").getItem(0).as("arg0")).collect()
+      col("arguments").getItem(0).as("arg0"),
+      col("arguments").getItem(1).as("arg1")).collect()
 
     // seq for storing results
     var all_results : Seq[(Int, String, String, String, String, Double, Double,
@@ -130,11 +176,13 @@ object EndtoEnd {
     var start_time = System.nanoTime
     var index = 0
     for (query_description <- queries) {
-      val query = QUERY_MAP(query_description.toSeq(0).toString())
-      val arg0 = query_description.toSeq(1).toString
+      val seq = query_description.toSeq
+      val query = QUERY_MAP(seq(0).toString())
+      val arg0 = if (seq(1) != null) seq(1).toString else ""
+      val arg1 = if (seq(2) != null) seq(2).toString else ""
 
       val before = System.nanoTime
-      val result_dataframes = query.run(spark, files, arg0)
+      val result_dataframes = query.run(spark, files, Array(arg0, arg1))
       val runtime = (System.nanoTime - before) / 1e9d
 
       val validation = query.get_validation(result_dataframes)
