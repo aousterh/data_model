@@ -56,9 +56,9 @@ class Benchmark:
                     def make_exec(_v):
                         def _exec():
                             if len(tables) > 1:
-                                pool = Pool(self._meta.get("num_thread", 1))
-                                _output = pool.starmap(_search, [(t, param["field"], _v)
-                                                                 for t in tables])
+                                with Pool(self._meta.get("num_thread", 1)) as pool:
+                                    _output = pool.starmap(_search, [(t, param["field"], _v)
+                                                                     for t in tables])
                             else:
                                 _output = _search(tables[0], param["field"], _v)
                             return _output
@@ -78,10 +78,10 @@ class Benchmark:
                     def make_exec(_s, _e):
                         def _exec():
                             if len(tables) > 1:
-                                pool = Pool(self._meta.get("num_thread", 1))
-                                _output = pool.starmap(_range_sum, [(t, param["field"],
-                                                                    param["target"], _s, _e)
-                                                                    for t in tables])
+                                with Pool(self._meta.get("num_thread", 1)) as pool:
+                                    _output = pool.starmap(_range_sum, [(t, param["field"],
+                                                                         param["target"], _s, _e)
+                                                                        for t in tables])
                             else:
                                 _output = _range_sum(tables[0], param["field"],
                                                      param["target"], _s, _e)

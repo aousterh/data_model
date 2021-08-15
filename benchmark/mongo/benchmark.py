@@ -51,9 +51,9 @@ class Benchmark:
                     def make_exec(_v):
                         def _exec():
                             if len(self._cols) > 1:
-                                pool = Pool(self._meta.get("num_thread", 1))
-                                _output = pool.starmap(_search, [(self._db, c, param["field"], _v)
-                                                                 for c in self._cols])
+                                with Pool(self._meta.get("num_thread", 1)) as pool:
+                                    _output = pool.starmap(_search, [(self._db, c, param["field"], _v)
+                                                                     for c in self._cols])
                             else:
                                 _output = _search(self._db, self._cols[0], param["field"], _v)
                             return _output
@@ -73,11 +73,11 @@ class Benchmark:
                     def make_exec(_s, _e):
                         def _exec():
                             if len(self._cols) > 1:
-                                pool = Pool(self._meta.get("num_thread", 1))
-                                _output = pool.starmap(_range_sum, [(self._db, c,
-                                                                     param["field"],
-                                                                     param["target"], _s, _e)
-                                                                    for c in self._cols])
+                                with Pool(self._meta.get("num_thread", 1)) as pool:
+                                    _output = pool.starmap(_range_sum, [(self._db, c,
+                                                                         param["field"],
+                                                                         param["target"], _s, _e)
+                                                                        for c in self._cols])
                             else:
                                 _output = _range_sum(self._db, self._cols[0],
                                                      param["field"],
