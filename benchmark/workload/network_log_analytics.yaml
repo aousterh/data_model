@@ -8,4 +8,4 @@ query:
     index: true
     trace_file: "network_log_analytics_30.ndjson"
     batch_size: 30
-    desc: "sum orig_bytes"
+    desc: "analytics sum orig_bytes"
