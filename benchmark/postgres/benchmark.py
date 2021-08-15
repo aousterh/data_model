@@ -123,6 +123,7 @@ class Benchmark:
                         "sys": r["sys"],
                         "argument_0": arg,
                         "validation": val,
+                        "instance": self._meta.get("instance", "unknown"),
                     }))
             util.write_csv(results, f"postgres-{wc['kind']}-{name}{'-index' if param.get('index', False) else ''}.csv")
 

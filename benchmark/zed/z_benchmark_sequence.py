@@ -16,6 +16,7 @@ WORKLOADS = ["../workload/trace/network_log_search_30.ndjson",
              "../workload/trace/network_log_analytics_30.ndjson"]
 RESULTS_CSV = "end_to_end_zed.csv"
 INPUT_ONE_FILE = True
+INSTANCE = "m5.xlarge"
 
 class Query(ABC):
     @abstractmethod
@@ -109,7 +110,8 @@ def run_benchmark(f_input, f_output=sys.stdout, input_fmt="zng",
         validation = query.get_validation(results["return"])
         fields = [index, "zed", input_fmt, output_fmt, query,
                   round(query_time - start_time, 3), results["real"],
-                  results["user"], results["sys"], args[0], validation]
+                  results["user"], results["sys"], args[0], validation,
+                  INSTANCE]
         f_output.write(",".join([str(x) for x in fields]) + "\n")
 
         index += 1
@@ -123,7 +125,7 @@ def main():
 #               ("zson", "zson")]
 
     with open(RESULTS_CSV, 'w') as f_output:
-        f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0,validation\n")
+        f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0,validation,instance\n")
 
         for workload in WORKLOADS:
             for (input_fmt, output_fmt) in formats:

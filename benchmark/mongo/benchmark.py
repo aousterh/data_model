@@ -113,6 +113,7 @@ class Benchmark:
                         "sys": r["sys"],
                         "argument_0": arg,
                         "validation": len(r["return"]) if wc["kind"] == "search" else r["return"],
+                        "instance": self._meta.get("instance", "unknown"),
                     }))
             util.write_csv(results, f"mongo-{wc['kind']}-{name}{'-index' if param.get('index', False) else ''}.csv")
 

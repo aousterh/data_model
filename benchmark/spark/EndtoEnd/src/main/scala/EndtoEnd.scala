@@ -13,6 +13,7 @@ object EndtoEnd {
 //  val WORKLOAD = "../../workload/trace/network_log_analytics_30.ndjson"
   val RESULTS_PATH = "results"
   val OUTPUT_PATH = "output"
+  val INSTANCE = "m5.xlarge"
 
   def hasColumn(df: DataFrame, path: String) = Try(df(path)).isSuccess
 
@@ -168,9 +169,10 @@ object EndtoEnd {
 
     // seq for storing results
     var all_results : Seq[(Int, String, String, String, String, Double, Double,
-      Double, Double, String, Long)] = Seq()
+      Double, Double, String, Long, String)] = Seq()
     var results_fields = Seq("index", "system", "in_format", "out_format",
-      "query", "start_time", "real", "user", "sys", "argument_0", "validation")
+      "query", "start_time", "real", "user", "sys", "argument_0", "validation",
+      "instance")
 
     println("Starting benchmark")
     var start_time = System.nanoTime
@@ -189,7 +191,7 @@ object EndtoEnd {
 
       all_results = all_results :+ (index, "spark", "parquet", "dataframe",
         query.toString(), (before - start_time) / 1e9d, runtime, 0.0, 0.0, arg0,
-        validation)
+        validation, INSTANCE)
       index += 1
       print(".")
     }

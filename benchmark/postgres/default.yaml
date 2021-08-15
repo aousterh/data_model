@@ -5,6 +5,7 @@ meta:
   num_run: 1
   num_thread: 4
   seed: 42
+  instance: m5.xlarge
 benchmark:
   - network_log_search
   - network_log_analytics
