@@ -11,6 +11,7 @@ import pandas as pd
 import util
 from util import timed, path_join
 
+CHUNK_SIZE = 100 * 1000
 
 @timed
 def load():
@@ -37,7 +38,8 @@ def load():
             print(f"loading dataframes {i + 1}/{len(fs)}")
             df = pd.read_json(f, lines=True)
             name = os.path.basename(f).replace(".ndjson", "")
-            df.to_sql(name, con=conn, if_exists='replace', index=True, method='multi')
+            df.to_sql(name, con=conn, if_exists='replace', index=True,
+                      method='multi', chunksize=CHUNK_SIZE)
 
 
 if __name__ == '__main__':
