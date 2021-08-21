@@ -20,8 +20,12 @@ INSTANCE = "m5.xlarge"
 
 class Query(ABC):
     @abstractmethod
-    def get_query(self):
+    def get_query(self, args):
         pass
+
+    def get_range(self, args):
+        # not all queries require a range
+        return ""
 
     @abstractmethod
     def get_validation(self, results):
@@ -32,8 +36,9 @@ class Query(ABC):
         pass
 
 class SearchQuery(Query):
-    def get_query(self):
-        return 'id.orig_h=={}'
+    def get_query(self, args):
+        assert(len(args) == 1)
+        return 'id.orig_h=={}'.format(*args)
 
     def get_validation(self, results):
         return len(results.rstrip("\n").split("\n"))
@@ -42,11 +47,17 @@ class SearchQuery(Query):
         return "search id.orig_h"
 
 class AnalyticsQuery(Query):
-    def get_query(self):
-        return 'ts >= {} | ts < {} | sum(orig_bytes)'
+    def get_query(self, args):
+        assert(len(args) == 2)
+        return 'ts >= {} | ts < {} | sum(orig_bytes)'.format(*args)
+
+    def get_range(self, args):
+        assert(len(args) == 2)
+        return "over {} to {}".format(*args)
+        return ""
 
     def get_validation(self, results):
-        return re.search(r"sum:(\d*) \(uint64\)", results).groups()[0]
+        return re.search(r"sum:(\d*)\(uint64\)", results).groups()[0]
 
     def __str__(self):
         return "analytics sum orig_bytes"
@@ -61,7 +72,7 @@ def data_path(fmt):
         return "{}/{}/*".format(DATA, fmt)
 
 zq_cmd = "zq -validate=false -i {} {} \"{}\" {}"
-zed_lake_cmd = "zed lake query {} \"from logs | {}\""
+zed_lake_cmd = "zed lake query {} \"from logs {} | {}\""
 
 def create_archive():
     log_dir = os.path.join(os.getcwd(), "logs")
@@ -86,21 +97,16 @@ def run_benchmark(f_input, f_output=sys.stdout, input_fmt="zng",
         query = QUERIES[query_description["query"]]
         args = query_description["arguments"]
 
-        if len(args) == 1:
-            zq_query = query.get_query().format(args[0])
-        elif len(args) == 2:
-            zq_query = query.get_query().format(args[0], args[1])
-        else:
-            print("ERROR: unrecognized number of arguments {}".format(len(args)))
-            exit()
+        zq_query = query.get_query(args)
 
         if output_fmt == "zson":
             output_fmt_string = "-z"
         else:
             output_fmt_string = "-f {}".format(output_fmt)
 
-        if input_fmt == "archive":
-            cmd = zed_lake_cmd.format(output_fmt_string, zq_query)
+        if input_fmt == "lake":
+            query_range = query.get_range(args)
+            cmd = zed_lake_cmd.format(output_fmt_string, query_range, zq_query)
         else:
             cmd = zq_cmd.format(input_fmt, output_fmt_string, zq_query,
                                 data_path(input_fmt))
@@ -121,7 +127,7 @@ def main():
 
     formats = [("zng", "zson"),
                ("zst", "zson"),
-               ("archive", "zson")]
+               ("lake", "zson")]
 #               ("zson", "zson")]
 
     with open(RESULTS_CSV, 'w') as f_output:
