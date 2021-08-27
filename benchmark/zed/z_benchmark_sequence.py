@@ -49,7 +49,7 @@ class SearchQuery(Query):
 class AnalyticsQuery(Query):
     def get_query(self, args):
         assert(len(args) == 2)
-        return 'ts >= {} | ts < {} | sum(orig_bytes)'.format(*args)
+        return 'ts >= {} ts < {} | sum(orig_bytes)'.format(*args)
 
     def get_range(self, args):
         assert(len(args) == 2)
