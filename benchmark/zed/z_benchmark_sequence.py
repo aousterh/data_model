@@ -6,17 +6,15 @@ import re
 import shutil
 import sys
 import sys
+import yaml
 sys.path.insert(1, "..")
 from util import *
 
 # assume volume is mounted at /zq-sample-data
 BASE_DIR = "/zq-sample-data"
 DATA = BASE_DIR + "/z"
-WORKLOADS = ["../workload/trace/network_log_search_30.ndjson",
-             "../workload/trace/network_log_analytics_30.ndjson"]
 RESULTS_CSV = "end_to_end_zed.csv"
-INPUT_ONE_FILE = True
-INSTANCE = "m5.xlarge"
+config = None
 
 class Query(ABC):
     @abstractmethod
@@ -66,7 +64,7 @@ class AnalyticsQuery(Query):
 QUERIES = {str(q): q for q in [SearchQuery(), AnalyticsQuery()]}
 
 def data_path(fmt):
-    if INPUT_ONE_FILE:
+    if config.get("meta", {}).get("input_one_file", True):
         return "{}/all.{}".format(DATA, fmt)
     else:
         return "{}/{}/*".format(DATA, fmt)
@@ -117,25 +115,37 @@ def run_benchmark(f_input, f_output=sys.stdout, input_fmt="zng",
         fields = [index, "zed", input_fmt, output_fmt, query,
                   round(query_time - start_time, 3), results["real"],
                   results["user"], results["sys"], args[0], validation,
-                  INSTANCE]
+                  config.get("meta", {}).get("instance", "unknown")]
         f_output.write(",".join([str(x) for x in fields]) + "\n")
 
         index += 1
 
 def main():
-    create_archive()
+    global config
 
     formats = [("zng", "zson"),
                ("zst", "zson"),
                ("lake", "zson")]
 #               ("zson", "zson")]
 
+    # read in config
+    config_file = os.environ.get('CONFIG', 'default.yaml')
+    with open(config_file) as f:
+        config = yaml.load(f, Loader=yaml.Loader)
+        meta = config.get("meta", {})
+        benchmark = config.get("benchmark", {})
+
+    create_archive()
+
     with open(RESULTS_CSV, 'w') as f_output:
         f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0,validation,instance\n")
 
-        for workload in WORKLOADS:
+        for workload in benchmark:
+            w_config = workload_config(workload)
+            t_file = trace_file(list(w_config.get("query").values())[0].get("trace_file"))
+
             for (input_fmt, output_fmt) in formats:
-                with open(workload, 'r') as f_input:
+                with open(t_file, 'r') as f_input:
                     run_benchmark(f_input, f_output, input_fmt, output_fmt)
     
 if __name__ == '__main__':

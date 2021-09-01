@@ -1,0 +1,8 @@
+name: zed
+version: v0.29.0-460-g1099f2f6
+meta:
+  instance: m5.xlarge
+  input_one_file: true
+benchmark:
+  - network_log_search
+  - network_log_analytics

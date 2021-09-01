@@ -1,4 +1,5 @@
 .PHONY: run
+CONFIG := default.yaml
 
 run:
-	./z_benchmark_sequence.py
+	CONFIG=$(CONFIG) ./z_benchmark_sequence.py
