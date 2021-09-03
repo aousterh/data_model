@@ -2,10 +2,20 @@ kind: analytics
 dataset:
   name: network_log
 query:
-  range_sum_orig_bytes:
+  range_sum:
     field: ts
+    ops: [ "range", "sum" ]
     target: orig_bytes
     index: true
     trace_file: "network_log_analytics_30.ndjson"
-    batch_size: 30
-    desc: "analytics sum orig_bytes"
+    desc: "analytics range ts sum orig_bytes"
+
+  range_sum_no_index:
+    from: range_sum
+    index: false
+    desc: "analytics range ts sum orig_bytes no index"
+
+  avg:
+    ops: [ "avg" ]
+    trace_file: "network_log_analytics_avg_30.ndjson"
+    desc: "analytics avg orig_bytes"

@@ -140,13 +140,14 @@ def main():
     with open(RESULTS_CSV, 'w') as f_output:
         f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0,validation,instance\n")
 
-        for workload in benchmark:
+        for workload, queries in benchmark.items():
             w_config = workload_config(workload)
-            t_file = trace_file(list(w_config.get("query").values())[0].get("trace_file"))
+            for q in queries:
+                t_file = trace_file(w_config.get("query").get(q).get("trace_file"))
 
-            for (input_fmt, output_fmt) in formats:
-                with open(t_file, 'r') as f_input:
-                    run_benchmark(f_input, f_output, input_fmt, output_fmt)
-    
+                for (input_fmt, output_fmt) in formats:
+                    with open(t_file, 'r') as f_input:
+                        run_benchmark(f_input, f_output, input_fmt, output_fmt)
+
 if __name__ == '__main__':
     main()
