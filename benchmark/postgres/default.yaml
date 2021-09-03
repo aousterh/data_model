@@ -7,7 +7,7 @@ meta:
   seed: 42
   instance: m5.xlarge
 benchmark:
-  - network_log_search
-  - network_log_analytics
-  - network_log_search_no_index
-  - network_log_analytics_no_index
+  network_log_search: [ "search" ]
+#  network_log_analytics: [ "avg" ]
+#  network_log_analytics: [ "range_sum" ]
+

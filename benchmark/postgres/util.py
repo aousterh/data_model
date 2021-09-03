@@ -29,9 +29,15 @@ def db_conn(conn_str='postgresql://zed:zed@localhost/zed',
         return psycopg2.connect(conn_str)
 
 
-def workload_config(name):
+def workload_config(name, query=None):
     with open(path_join(workload_dir, name + ".yaml")) as f:
-        return yaml.load(f, Loader=yaml.Loader)
+        wc = yaml.load(f, Loader=yaml.Loader)
+        if query is not None:
+            qc = wc["query"][query]
+            if "from" in qc:
+                qc = {**wc["query"]["from"], **qc}
+            return qc
+        return wc
 
 
 # Note: copied from ../util.py

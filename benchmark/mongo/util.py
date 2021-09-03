@@ -17,12 +17,18 @@ dataset_info = path_join(workload_dir, "dataset.yaml")
 trace_dir = path_join(workload_dir, "trace")
 
 
-def workload_config(name):
+def workload_config(name, query=None):
     with open(path_join(workload_dir, name + ".yaml")) as f:
-        return yaml.load(f, Loader=yaml.Loader)
+        wc = yaml.load(f, Loader=yaml.Loader)
+        if query is not None:
+            qc = wc["query"][query]
+            if "from" in qc:
+                qc = {**wc["query"]["from"], **qc}
+            return qc
+        return wc
 
 
-# Note: copied from ../util.py
+# TBD merge with ../util.py
 
 def unix_time(function, *args, **kwargs):
     '''Return `real`, `sys` and `user` elapsed time, like UNIX's command `time`

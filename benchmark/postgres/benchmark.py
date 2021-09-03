@@ -19,113 +19,88 @@ class Benchmark:
             self._benchmark = self._config.get("benchmark", {})
 
         self.conn = None
+        self.tables = None
 
     def connect(self):
         self.conn = util.db_conn()
-        return self
 
-    def run(self):
+        # fetch all tables
         cursor = self.conn.cursor()
-
-        # get all tables
         cursor.execute("""
             SELECT table_name
             FROM information_schema.tables
             WHERE (table_schema = 'public')
             ORDER BY table_name
         """)
-        tables = [r[0] for r in cursor.fetchall()]
+        self.tables = [r[0] for r in cursor.fetchall()]
 
+        return self
+
+    def run(self):
         if self._meta.get("warmup", True):
             raise NotImplemented
 
-        # run benchmarks
-        for workload in self._benchmark:
-            wc = util.workload_config(workload)
+        # read workloads
+        for workload, queries in self._benchmark.items():
 
-            for name, param in wc["query"].items():
-                start = time.time()
-                results = list()
-                query_funcs = list()
+            for name in queries:
+                # query configs
+                qc = util.workload_config(workload, query=name)
+
+                # make query executor
+                def make_exec(_param):
+                    def _exec():
+                        if len(self.tables) == 1 or self._meta.get("use_union", False):
+                            return _query(self.tables, _param)
+
+                        with Pool(self._meta.get("num_thread", 1)) as pool:
+                            return pool.starmap(_query, [([_t], _param)
+                                                         for _t in self.tables])
+
+                    return _exec
+
+                # unpack args and create executors
+                executors = list()
+                tf = qc.get("trace_file", None)
+                if tf is None:
+                    args = qc.get("args")
+                else:
+                    args = [row["arguments"] for row in util.read_trace(tf)]
+                for arg in args:
+                    params = {**qc, **{"name": name, "arg": arg}}
+                    executors.append((make_exec(params), params))
 
                 # create / drop index
-                for t in tables:
-                    _update_index(t, param["field"],
-                                  drop=not param.get("index", False))
-                if wc["kind"] == "search":
-                    def make_exec(_v):
-                        def _exec():
-                            if len(tables) > 1:
-                                with Pool(self._meta.get("num_thread", 1)) as pool:
-                                    _output = pool.starmap(_search, [(t, param["field"], _v)
-                                                                     for t in tables])
-                            else:
-                                _output = _search(tables[0], param["field"], _v)
-                            return _output
+                for _t in self.tables:
+                    if "index" in qc:
+                        _drop = not qc.get("index", False)
+                        _update_index(_t, qc.get("field"), drop=_drop)
 
-                        return _exec
+                # run
+                start, results = time.time(), list()
+                for i, (f, arg) in enumerate(executors):
+                    print(f"progress: running with {i + 1}/{len(executors)}")
 
-                    # iterate the values
-                    values = list()
-                    tf = param.get("trace_file", None)
-                    if tf:
-                        values = [row["arguments"][0] for row in util.read_trace(tf)]
-                        values = values[:param.get("batch_size", len(values))]
-                    for v in values:
-                        query_funcs.append((make_exec(v), v))
-
-                elif wc["kind"] == "analytics":
-                    def make_exec(_s, _e):
-                        def _exec():
-                            if len(tables) > 1:
-                                with Pool(self._meta.get("num_thread", 1)) as pool:
-                                    _output = pool.starmap(_range_sum, [(t, param["field"],
-                                                                         param["target"], _s, _e)
-                                                                        for t in tables])
-                            else:
-                                _output = _range_sum(tables[0], param["field"],
-                                                     param["target"], _s, _e)
-                            return _output
-
-                        return _exec
-
-                    # iterate the values
-                    values = list()
-                    tf = param.get("trace_file", None)
-                    if tf:
-                        values = [row["arguments"] for row in util.read_trace(tf)]
-                        values = values[:param.get("batch_size", len(values))]
-                    for _start, _end in values:
-                        query_funcs.append((make_exec(_start, _end), f"{_start} {_end}"))
-                else:
-                    raise NotImplemented
-
-                # execute
-                for i, (f, arg) in enumerate(query_funcs):
-                    print(f"progress: running with {i + 1}/{len(query_funcs)}")
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
 
-                    # dump to log
-                    if wc["kind"] == "search":
-                        val = sum(len(t) for t in r["return"] if t is not None)
-                    elif wc["kind"] == "analytics":
-                        val = sum(t[0][0] for t in r["return"] if t is not None)
-
+                    # get validate and dump to log
                     results.append(OrderedDict({
                         "index": i,
                         "system": "postgres",
-                        "in_format": "index" if param.get("index", False) else "table",
+                        "in_format": "index" if qc.get("index", False) else "table",
                         "out_format": "table",
-                        "query": param["desc"],
+                        "query": qc["desc"],
                         "start_time": round(time.time() - start, 3),
                         "real": r["real"],
                         "user": r["user"],
                         "sys": r["sys"],
                         "argument_0": arg,
-                        "validation": val,
+                        "validation": _get_validate(name, r),
                         "instance": self._meta.get("instance", "unknown"),
                     }))
-            util.write_csv(results, f"postgres-{wc['kind']}-{name}{'-index' if param.get('index', False) else ''}.csv")
+
+                f_name = f"postgres-{qc.get('desc', '').replace(' ', '_')}.csv"
+                util.write_csv(results, f_name)
 
 
 def _update_index(_t, _k, drop=False):
@@ -147,37 +122,57 @@ def _update_index(_t, _k, drop=False):
         print(_t, e)
 
 
-def _range_sum(_t, _field, _target, _start, _end):
+def _query(_ts, params):
+    r, s, = None, None
+
+    name = params.get("name", "")
+    for _t in _ts:
+        if name == "avg":
+            s = f"""
+                SELECT AVG ("{params['arg'][0]}") AS avg
+                FROM {_t}
+                WHERE false;
+            """
+        elif name == "search":
+            s = f"""
+                SELECT * FROM {_t}
+                WHERE ("{params['field']}" = '{params['arg'][0]}');
+            """
+        elif name == "search_sort_head":
+            # TBD
+            s = f"""
+                    SELECT * FROM {_t}
+                    WHERE ("{params['field']}" = '{params['arg'][0]}');
+                """
+        elif name in {"range_sum", "range_sum_no_index"}:
+            s = f"""
+                SELECT SUM ("{params['target']}") AS sum
+                FROM {_t}
+                WHERE "{params['field']}" < '{params['arg'][1]}' 
+                    AND "{params['field']}" > '{params['arg'][0]}';
+            """
+        else:
+            s = ""
+
+    # execute
     _cursor = util.db_conn().cursor()
-    s = f"""
-        SELECT SUM ("{_target}") AS sum
-        FROM {_t}
-        WHERE "{_field}" < '{_end}' AND "{_field}" > '{_start}';
-    """
-    r = None
     try:
         _cursor.execute(s)
         r = _cursor.fetchall()
-        print(_t, s, "success")
+        # print(_ts, s, "success")
     except Exception as e:
-        print(_t, e)
+        print(_ts, e)
     return r
 
 
-def _search(_t, _k, _v):
-    _cursor = util.db_conn().cursor()
-    s = f"""
-        SELECT * FROM {_t}
-        WHERE ("{_k}" = '{_v}');
-    """
-    r = None
-    try:
-        _cursor.execute(s)
-        r = _cursor.fetchall()
-        print(_t, s, "success")
-    except Exception as e:
-        print(_t, e)
-    return r
+def _get_validate(name, r):
+    if name in {"search"}:
+        return sum(len(t) for t in r["return"] if t is not None)
+    elif name in {"range_sum", "range_sum_no_index"}:
+        return sum(t[0][0] for t in r["return"] if t is not None)
+    elif name in {"avg"}:
+        return list(t[0][0] for t in r["return"] if t is not None)
+    return ""
 
 
 def main():

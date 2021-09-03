@@ -4,5 +4,5 @@ meta:
   instance: m5.xlarge
   input_one_file: true
 benchmark:
-  - network_log_search
-  - network_log_analytics
+  network_log_search: [ "search" ]
+  network_log_analytics: [ "avg" ]

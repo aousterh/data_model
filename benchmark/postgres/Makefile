@@ -19,8 +19,8 @@ init:
 	rm -fr $(DB)
 	initdb $(DB)
 	sudo chmod a+w /var/run/postgresql
-start:
-	sudo systemctl stop postgresql@13-main
+start: | stop
+	# sudo systemctl stop postgresql@13-main
 	pg_ctl -D $(DB) --log=log.txt start
 prep:
 	psql postgres -c "CREATE ROLE zed WITH LOGIN PASSWORD 'zed'" || true
@@ -28,6 +28,6 @@ prep:
 load:
 	./load.py
 run:
-	CONFIG=$(CONFIG) ./benchmark.py > out.txt 2> err.txt
+	CONFIG=$(CONFIG) ./benchmark.py | tee out.txt 2> err.txt
 stop:
-	pg_ctl -D $(DB) stop
+	pg_ctl -D $(DB) stop || true
