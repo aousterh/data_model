@@ -25,6 +25,10 @@ class Query(ABC):
         # not all queries require a range
         return ""
 
+    def get_flags(self, args):
+        # not all queries require extra flags
+        return ""
+
     @abstractmethod
     def get_validation(self, results):
         pass
@@ -72,9 +76,24 @@ class AnalyticsRangeTsSumQuery(Query):
     def __str__(self):
         return "analytics range ts sum orig_bytes"
 
+class AnalyticsAvgQuery(Query):
+    def get_query(self, args):
+        assert(len(args) == 1)
+        return 'avg({})'.format(*args)
+
+    def get_flags(self, args):
+        assert(len(args) == 1)
+        return '-k {}'.format(*args)
+
+    def get_validation(self, results):
+        return re.search(r"avg:(\d+(\.\d*)?|\.\d+)", results).groups()[0]
+
+    def __str__(self):
+        return "analytics avg field"
+
 # mapping from string ID of each query to its Query class
-QUERIES = {str(q): q for q in [SearchQuery(), AnalyticsRangeTsSumQuery(),
-                               SearchSortHeadQuery()]}
+QUERIES = {str(q): q for q in [SearchQuery(), SearchSortHeadQuery(),
+                               AnalyticsRangeTsSumQuery(), AnalyticsAvgQuery()]}
 
 def data_path(fmt):
     if config.get("meta", {}).get("input_one_file", True):
@@ -98,6 +117,7 @@ def create_archive():
 
 def run_benchmark(query_description, f_input, f_output=sys.stdout,
                   input_fmt="zng", output_fmt="zng"):
+    meta = config.get("meta", {})
     flush_buffer_cache()
 
     start_time = time.time()
@@ -110,25 +130,34 @@ def run_benchmark(query_description, f_input, f_output=sys.stdout,
 
         zq_query = query.get_query(args)
 
+        flags = []
+        # output format flag
         if output_fmt == "zson":
-            output_fmt_string = "-z"
+            flags.append("-z")
         else:
-            output_fmt_string = "-f {}".format(output_fmt)
+            flags.append("-f {}".format(output_fmt))
+
+        # zst cutter hack flag
+        if input_fmt == "zst" and meta.get("zst_cutter_flag", False):
+            flags.append(query.get_flags(args))
+
+        flags_str = " ".join(flags)
 
         if input_fmt == "lake":
             query_range = query.get_range(args)
-            cmd = zed_lake_cmd.format(output_fmt_string, query_range, zq_query)
+            cmd = zed_lake_cmd.format(flags_str, query_range, zq_query)
         else:
-            cmd = zq_cmd.format(input_fmt, output_fmt_string, zq_query,
+            cmd = zq_cmd.format(input_fmt, flags_str, zq_query,
                                 data_path(input_fmt))
         query_time = time.time()
+
         results = unix_time_bash(cmd, stdout=subprocess.PIPE)
 
         validation = query.get_validation(results["return"])
         fields = [index, "zed", input_fmt, output_fmt, query,
                   round(query_time - start_time, 3), results["real"],
                   results["user"], results["sys"], args[0], validation,
-                  config.get("meta", {}).get("instance", "unknown")]
+                  meta.get("instance", "unknown")]
         f_output.write(",".join([str(x) for x in fields]) + "\n")
 
         index += 1
@@ -145,7 +174,6 @@ def main():
     config_file = os.environ.get('CONFIG', 'default.yaml')
     with open(config_file) as f:
         config = yaml.load(f, Loader=yaml.Loader)
-        meta = config.get("meta", {})
         benchmark = config.get("benchmark", {})
 
     create_archive()

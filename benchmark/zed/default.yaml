@@ -2,7 +2,8 @@ name: zed
 version: v0.29.0-460-g1099f2f6
 meta:
   instance: m5.xlarge
-  input_one_file: true
+  input_one_file: false
+  zst_cutter_flag: false
 benchmark:
   network_log_search: [ "search", "search_sort_head" ]
-  network_log_analytics: [ "range_sum" ]
+  network_log_analytics: [ "avg" ] #"range_sum"

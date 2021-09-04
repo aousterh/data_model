@@ -18,4 +18,4 @@ query:
   avg:
     ops: [ "avg" ]
     trace_file: "network_log_analytics_avg_30.ndjson"
-    desc: "analytics avg orig_bytes"
+    desc: "analytics avg field"
