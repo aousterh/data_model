@@ -44,7 +44,19 @@ class SearchQuery(Query):
     def __str__(self):
         return "search id.orig_h"
 
-class AnalyticsQuery(Query):
+class SearchSortHeadQuery(Query):
+    def get_query(self, args):
+        assert(len(args) == 1)
+        return 'id.orig_h=={} | sort ts | head 1000'.format(*args)
+
+    def get_validation(self, results):
+        l = results.rstrip("\n").split("\n")[-1]
+        return re.search(r"orig_p:(\d*),", l).groups()[0]
+
+    def __str__(self):
+        return "search sort head id.orig_h"
+
+class AnalyticsRangeTsSumQuery(Query):
     def get_query(self, args):
         assert(len(args) == 2)
         return 'ts >= {} ts < {} | sum(orig_bytes)'.format(*args)
@@ -58,10 +70,11 @@ class AnalyticsQuery(Query):
         return re.search(r"sum:(\d*)\(uint64\)", results).groups()[0]
 
     def __str__(self):
-        return "analytics sum orig_bytes"
+        return "analytics range ts sum orig_bytes"
 
 # mapping from string ID of each query to its Query class
-QUERIES = {str(q): q for q in [SearchQuery(), AnalyticsQuery()]}
+QUERIES = {str(q): q for q in [SearchQuery(), AnalyticsRangeTsSumQuery(),
+                               SearchSortHeadQuery()]}
 
 def data_path(fmt):
     if config.get("meta", {}).get("input_one_file", True):
@@ -83,17 +96,17 @@ def create_archive():
     os.system("zed lake create -p logs")
     os.system("zed lake load -p logs {}".format(data_path("zng")))
 
-def run_benchmark(f_input, f_output=sys.stdout, input_fmt="zng",
-                  output_fmt="zng"):
+def run_benchmark(query_description, f_input, f_output=sys.stdout,
+                  input_fmt="zng", output_fmt="zng"):
     flush_buffer_cache()
 
     start_time = time.time()
     index = 0
 
+    # assume only a single type of query per trace
+    query = QUERIES[query_description]
     for line in f_input:
-        query_description = json.loads(line)
-        query = QUERIES[query_description["query"]]
-        args = query_description["arguments"]
+        args = json.loads(line)["arguments"]
 
         zq_query = query.get_query(args)
 
@@ -143,11 +156,13 @@ def main():
         for workload, queries in benchmark.items():
             w_config = workload_config(workload)
             for q in queries:
-                t_file = trace_file(w_config.get("query").get(q).get("trace_file"))
+                q_config = w_config.get("query").get(q)
+                t_file = trace_file(q_config.get("trace_file"))
 
                 for (input_fmt, output_fmt) in formats:
                     with open(t_file, 'r') as f_input:
-                        run_benchmark(f_input, f_output, input_fmt, output_fmt)
+                        run_benchmark(q_config.get("desc"), f_input, f_output,
+                                      input_fmt, output_fmt)
 
 if __name__ == '__main__':
     main()
