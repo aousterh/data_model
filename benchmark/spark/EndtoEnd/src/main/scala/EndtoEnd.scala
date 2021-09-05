@@ -9,8 +9,6 @@ import scala.util.Try
 
 object EndtoEnd {
   val PARQUET_PATH = "/zq-sample-data/parquet/"
-  val WORKLOAD = "../../workload/trace/network_log_search_30.ndjson"
-//  val WORKLOAD = "../../workload/trace/network_log_analytics_30.ndjson"
   val RESULTS_PATH = "results"
   val OUTPUT_PATH = "output"
   val INSTANCE = "m5.xlarge"
@@ -141,14 +139,13 @@ object EndtoEnd {
     }
 
     override def toString() : String = {
-      return "analytics sum orig_bytes"
+      return "analytics range ts sum orig_bytes"
     }
   }
 
-  // mapping from string ID of each query to its Query class
-  val QUERY_ARRAY = Array(new SearchQuery(), new SearchUberQuery(),
-    new AnalyticsSumOrigBytesQuery())
-  val QUERY_MAP = QUERY_ARRAY.map(q => q.toString() -> q).toMap
+  // array of (trace_file, query class) tuples
+  val workloads = Array(("../../workload/trace/network_log_search_30.ndjson", new SearchQuery()),
+    ("../../workload/trace/network_log_analytics_30.ndjson", new AnalyticsSumOrigBytesQuery()))
 
   def getListOfParquetFiles(dir: String):List[String] = {
     val d = new File(dir)
@@ -159,11 +156,12 @@ object EndtoEnd {
     l.map(f => f.toString()).filter(_.endsWith(".parquet"))
   }
 
-  def run_benchmark(spark: SparkSession, files: List[String]) = {
+  def run_benchmark(spark: SparkSession, files: List[String], trace_file_name: String,
+    query: Query, include_header: String) = {
     import spark.implicits._
 
     // read in queries to execute
-    val queries = spark.read.json(WORKLOAD).select(col("query").as("query"),
+    val queries = spark.read.json(trace_file_name).select(col("query").as("query"),
       col("arguments").getItem(0).as("arg0"),
       col("arguments").getItem(1).as("arg1")).collect()
 
@@ -179,7 +177,6 @@ object EndtoEnd {
     var index = 0
     for (query_description <- queries) {
       val seq = query_description.toSeq
-      val query = QUERY_MAP(seq(0).toString())
       val arg0 = if (seq(1) != null) seq(1).toString else ""
       val arg1 = if (seq(2) != null) seq(2).toString else ""
 
@@ -197,14 +194,21 @@ object EndtoEnd {
     }
 
     all_results.toDF(results_fields:_*).coalesce(1).write.format("csv")
-      .option("header", "true").save(RESULTS_PATH)
+      .mode("append").option("header", include_header).save(RESULTS_PATH)
+
+    print("\n")
   }
 
   def main(args: Array[String]) {
     val spark = SparkSession.builder.appName("Spark Benchmark").getOrCreate()
 
     val parquet_files = getListOfParquetFiles(PARQUET_PATH)
-    run_benchmark(spark, parquet_files)
+
+    var include_header = "true"
+    for (w <- workloads) {
+      run_benchmark(spark, parquet_files, w._1, w._2, include_header)
+      include_header = "false"
+    }
 
     spark.stop()
   }
