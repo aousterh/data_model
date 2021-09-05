@@ -7,7 +7,7 @@ query:
     ops: [ "search" ]
     index: true
     args: [ "10.47.3.50", "foo" ]  # ignored when trace file is given
-    trace_file: "network_log_search_30.ndjson"
+    trace_file: "network_log_search_needles_30.ndjson"
     desc: "search id.orig_h"
 
   search_no_index:
@@ -21,12 +21,10 @@ query:
     index: true
     sort_field: "ts"
     head_count: 1000
-    trace_file: "network_log_search_30.ndjson"
+    trace_file: "network_log_search_needles_30.ndjson"
     desc: "search sort head id.orig_h"
 
   search_sort_head_no_index:
     from: search_sort_head
     index: false
     desc: "search sort head id.orig_h no index"
-
-
