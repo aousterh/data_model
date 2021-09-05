@@ -2,7 +2,7 @@
 import java.io.File
 import java.sql.Timestamp
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.functions.{col, lit, sum, to_timestamp}
+import org.apache.spark.sql.functions.{avg, col, lit, sum, to_timestamp}
 import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import scala.sys.process._
 import scala.util.Try
@@ -60,7 +60,7 @@ object EndtoEnd {
     }
   }
 
-  class SearchUberQuery extends Query
+  class SearchSortHeadQuery extends Query
   {
     def run(spark: SparkSession, files: List[String], args: Array[String]) : List[DataFrame] = {
       val ip = args(0)
@@ -88,6 +88,8 @@ object EndtoEnd {
       val search_df = cleaned_dfs.map(df => df.select(customSelect(df, all_columns):_*)
         .filter(col("id.orig_h") === ip))
         .reduce(_.union(_))
+        .orderBy("ts")
+        .limit(1000)
         .toDF()
 
       // write the results out as parquet, to ensure the query actually executed
@@ -97,12 +99,15 @@ object EndtoEnd {
     }
 
     def get_validation(result_dfs: List[DataFrame]) : Long = {
-      // count records returned
-      return result_dfs.map(df => df.count()).sum
+      // return source port of last result
+      val ports = result_dfs(0).select(col("id.orig_p"))
+      val count = ports.count()
+      val p = ports.collect()(count.toInt-1)(0).asInstanceOf[Long]
+      return p
     }
 
     override def toString() : String = {
-      return "search id.orig_h uber"
+      return "search sort head id.orig_h"
     }
   }
 
@@ -123,10 +128,9 @@ object EndtoEnd {
       // issue the query
       val analytics_df = dfs.map(df => df.filter(col("ts") >= ts_min && col("ts") < ts_max)
         .select(col("orig_bytes"))
-        .agg(sum("orig_bytes")))
+        .agg(sum("orig_bytes").as("sum")))
         .reduce(_.union(_))
-        .agg(sum("sum(orig_bytes)"))
-        .select(col("sum(sum(orig_bytes))").as("sum"))
+        .agg(sum("sum").as("sum"))
 
       // write the results out as parquet, to ensure the query actually executed
       analytics_df.write.mode("append").parquet(OUTPUT_PATH)
@@ -143,9 +147,45 @@ object EndtoEnd {
     }
   }
 
+  class AnalyticsAvgQuery extends Query
+  {
+    def run(spark: SparkSession, files: List[String], args: Array[String]) : List[DataFrame] = {
+      val agg_column = args(0)
+
+      // load dataframes that contain the aggregation column
+      val dfs = for {
+        x <- files
+        val df = spark.read.parquet(x)
+        if hasColumn(df, agg_column)
+      } yield df
+
+      // issue the query
+      // refer to nested id fields without the "id." since the select removes it
+      val analytics_df = dfs.map(df => df.select(col(agg_column)))
+        .reduce(_.union(_))
+        .agg(avg(agg_column.stripPrefix("id.")).as("avg"))
+
+      // write the results out as parquet, to ensure the query actually executed
+      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
+
+      return List(analytics_df)
+    }
+
+    def get_validation(result_dfs: List[DataFrame]) : Long = {
+      // round to Long for type consistency
+      return result_dfs(0).collect()(0)(0).asInstanceOf[Double].toLong
+    }
+
+    override def toString() : String = {
+      return "analytics avg field"
+    }
+  }
+
   // array of (trace_file, query class) tuples
-  val workloads = Array(("../../workload/trace/network_log_search_30.ndjson", new SearchQuery()),
-    ("../../workload/trace/network_log_analytics_30.ndjson", new AnalyticsSumOrigBytesQuery()))
+  val workloads = Array(("../../workload/trace/network_log_search_needles_30.ndjson", new SearchQuery()),
+    //("../../workload/trace/network_log_analytics_30.ndjson", new AnalyticsSumOrigBytesQuery())
+    ("../../workload/trace/network_log_search_needles_30.ndjson", new SearchSortHeadQuery()),
+    ("../../workload/trace/network_log_analytics_avg_30.ndjson", new AnalyticsAvgQuery()))
 
   def getListOfParquetFiles(dir: String):List[String] = {
     val d = new File(dir)
