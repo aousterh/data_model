@@ -4,6 +4,7 @@ meta:
   instance: m5.xlarge
   input_one_file: false
   zst_cutter_flag: false
+  search_flag: true
 benchmark:
   network_log_search: [ "search", "search_sort_head" ]
   network_log_analytics: [ "avg" ] #"range_sum"

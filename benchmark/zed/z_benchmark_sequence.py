@@ -15,6 +15,8 @@ BASE_DIR = "/zq-sample-data"
 DATA = BASE_DIR + "/z"
 RESULTS_CSV = "end_to_end_zed.csv"
 config = None
+meta = None
+index_rule_id = None
 
 class Query(ABC):
     @abstractmethod
@@ -25,7 +27,7 @@ class Query(ABC):
         # not all queries require a range
         return ""
 
-    def get_flags(self, args):
+    def get_flags(self, args, input_format):
         # not all queries require extra flags
         return ""
 
@@ -42,6 +44,14 @@ class SearchQuery(Query):
         assert(len(args) == 1)
         return 'id.orig_h=={}'.format(*args)
 
+    def get_flags(self, args, input_format):
+        assert(len(args) == 1)
+
+        if input_format == "lake" and meta.get("search_flag", False):
+            return "-search {}:{}".format(index_rule_id, args[0])
+        else:
+            return ""
+
     def get_validation(self, results):
         return len(results.rstrip("\n").split("\n"))
 
@@ -53,9 +63,17 @@ class SearchSortHeadQuery(Query):
         assert(len(args) == 1)
         return 'id.orig_h=={} | sort ts | head 1000'.format(*args)
 
+    def get_flags(self, args, input_format):
+        assert(len(args) == 1)
+
+        if input_format == "lake" and meta.get("search_flag", False):
+            return "-search {}:{}".format(index_rule_id, args[0])
+        else:
+            return ""
+    
     def get_validation(self, results):
         l = results.rstrip("\n").split("\n")[-1]
-        return re.search(r"orig_p:(\d*),", l).groups()[0]
+        return re.search(r"orig_p:(\d*)\(port", l).groups()[0]
 
     def __str__(self):
         return "search sort head id.orig_h"
@@ -68,7 +86,6 @@ class AnalyticsRangeTsSumQuery(Query):
     def get_range(self, args):
         assert(len(args) == 2)
         return "over {} to {}".format(*args)
-        return ""
 
     def get_validation(self, results):
         return re.search(r"sum:(\d*)\(uint64\)", results).groups()[0]
@@ -81,9 +98,13 @@ class AnalyticsAvgQuery(Query):
         assert(len(args) == 1)
         return 'avg({})'.format(*args)
 
-    def get_flags(self, args):
+    def get_flags(self, args, input_format):
         assert(len(args) == 1)
-        return '-k {}'.format(*args)
+
+        if input_format == "zst" and meta.get("zst_cutter_flag", False):
+            return "-k {}".format(*args)
+        else:
+            return ""
 
     def get_validation(self, results):
         return re.search(r"avg:(\d+(\.\d*)?|\.\d+)", results).groups()[0]
@@ -96,28 +117,59 @@ QUERIES = {str(q): q for q in [SearchQuery(), SearchSortHeadQuery(),
                                AnalyticsRangeTsSumQuery(), AnalyticsAvgQuery()]}
 
 def data_path(fmt):
-    if config.get("meta", {}).get("input_one_file", True):
+    if meta.get("input_one_file", True):
         return "{}/all.{}".format(DATA, fmt)
     else:
         return "{}/{}/*".format(DATA, fmt)
 
 zq_cmd = "zq -validate=false -i {} {} \"{}\" {}"
-zed_lake_cmd = "zed lake query {} \"from logs {} | {}\""
+zed_lake_cmd = "zed lake query {} \"from p1 {} | {}\""
 
-def create_archive():
+def create_lake():
     log_dir = os.path.join(os.getcwd(), "logs")
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
     os.mkdir(log_dir)
 
     os.environ["ZED_LAKE_ROOT"] = log_dir
-    os.system("zed lake init logs")
-    os.system("zed lake create -p logs")
-    os.system("zed lake load -p logs {}".format(data_path("zng")))
+    os.system("zed lake init")
+
+def setup_lake():
+    create_lake()
+
+    os.system("zed lake create -p p1")
+    os.system("zed lake load -p p1 {}".format(data_path("zng")))
+
+def setup_lake_hack():
+    global index_rule_id
+    create_lake()
+
+    os.system("zed lake create -p p1 -S 20MB")
+    os.system("zed lake load -p p1 {}".format(data_path("zng")))
+
+    # create index and get ID
+    results = os.popen("zed lake index create TEST field id.orig_h").read()
+    index_rule_id = None
+    for l in results.split("\n"):
+        m = re.search(r"\s*rule (.*) field ", l)
+        if m is not None:
+            index_rule_id = m.groups()[0]
+
+    results = os.popen("zed lake log -p p1").read()
+
+    # parse out object IDs
+    ids = []
+    for l in results.split("\n"):
+        m = re.search(r"\s*(.*)\s+(\d+) records in", l)
+        if m is not None:
+            ids.append(m.groups()[0])
+
+    # apply index to objects
+    for i in ids:
+        os.system("zed lake index apply -p p1 TEST {}".format(i))
 
 def run_benchmark(query_description, f_input, f_output=sys.stdout,
                   input_fmt="zng", output_fmt="zng"):
-    meta = config.get("meta", {})
     flush_buffer_cache()
 
     start_time = time.time()
@@ -137,9 +189,8 @@ def run_benchmark(query_description, f_input, f_output=sys.stdout,
         else:
             flags.append("-f {}".format(output_fmt))
 
-        # zst cutter hack flag
-        if input_fmt == "zst" and meta.get("zst_cutter_flag", False):
-            flags.append(query.get_flags(args))
+        # flags for various hacks
+        flags.append(query.get_flags(args, input_fmt))
 
         flags_str = " ".join(flags)
 
@@ -154,7 +205,7 @@ def run_benchmark(query_description, f_input, f_output=sys.stdout,
         results = unix_time_bash(cmd, stdout=subprocess.PIPE)
 
         validation = query.get_validation(results["return"])
-        fields = [index, "zed", input_fmt, output_fmt, query,
+        fields = [index, "zed", input_fmt, output_fmt, query_description,
                   round(query_time - start_time, 3), results["real"],
                   results["user"], results["sys"], args[0], validation,
                   meta.get("instance", "unknown")]
@@ -163,7 +214,7 @@ def run_benchmark(query_description, f_input, f_output=sys.stdout,
         index += 1
 
 def main():
-    global config
+    global config, meta
 
     formats = [("zng", "zson"),
                ("zst", "zson"),
@@ -174,9 +225,10 @@ def main():
     config_file = os.environ.get('CONFIG', 'default.yaml')
     with open(config_file) as f:
         config = yaml.load(f, Loader=yaml.Loader)
+        meta = config.get("meta", {})
         benchmark = config.get("benchmark", {})
 
-    create_archive()
+    setup_lake_hack()
 
     with open(RESULTS_CSV, 'w') as f_output:
         f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0,validation,instance\n")
