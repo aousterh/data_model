@@ -68,7 +68,7 @@ object EndtoEnd {
       // load dataframes that contain the search column
       val dfs = for {
         x <- files
-        val df = spark.read.parquet(x)
+        val df = spark.read.parquet(x).withColumn("ts", to_timestamp(col("ts")))
         if hasColumn(df, "id.orig_h")
       } yield df
 
