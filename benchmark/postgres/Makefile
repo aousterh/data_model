@@ -18,7 +18,7 @@ install:
 init:
 	rm -fr $(DB)
 	initdb $(DB)
-	sudo chmod a+w /var/run/postgresql
+	sudo chmod a+w /var/run/postgresql || true
 start: | stop
 	# sudo systemctl stop postgresql@13-main
 	pg_ctl -D $(DB) --log=log.txt start
