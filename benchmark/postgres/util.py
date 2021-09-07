@@ -35,7 +35,7 @@ def workload_config(name, query=None):
         if query is not None:
             qc = wc["query"][query]
             if "from" in qc:
-                qc = {**wc["query"]["from"], **qc}
+                qc = {**wc["query"][qc["from"]], **qc}
             return qc
         return wc
 
