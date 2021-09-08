@@ -254,7 +254,7 @@ def _get_validate(name, r):
         return sum([len(t) for t in r["return"] if t is not None])
     elif name in {"search_sort_head", "search_sort_head_no_index"}:
         # XXX orig_p of the last column; should be oblivious to the dataset
-        return r["return"][-1][11]
+        return r["return"][-1][9]
     elif name in {"range_sum", "range_sum_no_index"}:
         return sum(t[0][0] for t in r["return"] if t is not None)
     elif name in {"avg"}:
