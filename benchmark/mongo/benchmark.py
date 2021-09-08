@@ -50,7 +50,8 @@ class Benchmark:
                                   qc["field"],
                                   drop=_drop)
 
-                if name in {"search", "search_sort_head"}:
+                if name in {"search", "search_sort_head",
+                            "search_no_index", "search_sort_head_no_index"}:
                     sort_head = True if name == "search_sort_head" else False
                     def make_exec(_v):
                         def _exec():

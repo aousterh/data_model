@@ -8,5 +8,7 @@ meta:
   instance: m5.xlarge
 benchmark:
   network_log_analytics: [ "avg" ]
-  network_log_search: [ "search" , "search_sort_head" ]
+  network_log_search: [ "search" , "search_no_index",
+                        "search_sort_head",
+                        "search_sort_head_no_index" ]
 #  network_log_analytics: [ "range_sum" ]
