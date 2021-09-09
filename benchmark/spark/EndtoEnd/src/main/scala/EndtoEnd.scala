@@ -10,7 +10,6 @@ import scala.util.Try
 object EndtoEnd {
   val PARQUET_PATH = "/zq-sample-data/parquet/"
   val RESULTS_PATH = "results"
-  val OUTPUT_PATH = "output"
   val INSTANCE = "m5.xlarge"
 
   def hasColumn(df: DataFrame, path: String) = Try(df(path)).isSuccess
@@ -42,10 +41,6 @@ object EndtoEnd {
 
       // issue the query
       val search_results = dfs.map(df => df.filter(col("id.orig_h") === ip))
-
-      // write the results out as parquet, to ensure the query actually executed
-      for (df <- search_results)
-        df.write.mode("append").parquet(OUTPUT_PATH)
 
       return search_results
     }
@@ -81,19 +76,29 @@ object EndtoEnd {
           df
       }
 
-      // create the uber schema
-      val all_columns = cleaned_dfs.map(df => df.columns.toSet).reduce(_ ++ _)
+      // filter dataframes for rows with the matching IP, skip dataframes with
+      // no matching rows
+      val search_dfs = for {
+        df <- cleaned_dfs
+        val df_filtered = df.filter(col("id.orig_h") === ip)
+        if df_filtered.count() > 0
+      } yield df_filtered
 
-      // issue the query, use customSelect to uber the results as you go
-      val search_df = cleaned_dfs.map(df => df.select(customSelect(df, all_columns):_*)
-        .filter(col("id.orig_h") === ip))
+      if (search_dfs.length == 1) {
+        // only one dataframe had matching results, no uber necessary
+        // just sort and return first 1000
+        val search_df = search_dfs(0).orderBy("ts").limit(1000).toDF()
+        return List(search_df)
+      }
+
+      // multiple dataframes match, use an uber schema to combine them
+      val all_columns = search_dfs.map(df => df.columns.toSet).reduce(_ ++ _)
+
+      val search_df = search_dfs.map(df => df.select(customSelect(df, all_columns):_*))
         .reduce(_.union(_))
         .orderBy("ts")
         .limit(1000)
         .toDF()
-
-      // write the results out as parquet, to ensure the query actually executed
-      search_df.write.mode("append").parquet(OUTPUT_PATH)
 
       return List(search_df)
     }
@@ -132,9 +137,6 @@ object EndtoEnd {
         .reduce(_.union(_))
         .agg(sum("sum").as("sum"))
 
-      // write the results out as parquet, to ensure the query actually executed
-      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
-
       return List(analytics_df)
     }
 
@@ -164,9 +166,6 @@ object EndtoEnd {
       val analytics_df = dfs.map(df => df.select(col(agg_column)))
         .reduce(_.union(_))
         .agg(avg(agg_column.stripPrefix("id.")).as("avg"))
-
-      // write the results out as parquet, to ensure the query actually executed
-      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
 
       return List(analytics_df)
     }
@@ -220,8 +219,10 @@ object EndtoEnd {
       val arg0 = if (seq(1) != null) seq(1).toString else ""
       val arg1 = if (seq(2) != null) seq(2).toString else ""
 
+      // run the query and collect results at the driver
       val before = System.nanoTime
       val result_dataframes = query.run(spark, files, Array(arg0, arg1))
+      result_dataframes.map(df => df.collect())
       val runtime = (System.nanoTime - before) / 1e9d
 
       val validation = query.get_validation(result_dataframes)
