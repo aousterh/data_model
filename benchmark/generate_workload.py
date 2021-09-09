@@ -1,6 +1,4 @@
-# 1 script that reads in the data, finds the id.orig_h, generates the stream of random queries
-# (which can be input to different backends besides elastic).
-# This will be the workload generation script.
+# Script for generating streams of random queries
 from datetime import timedelta
 from dateutil import parser
 import glob
@@ -16,7 +14,8 @@ ZNG_DIR="/zq-sample-data/z/zng"
 OUTPUT_DIR="workload/trace"
 OUTPUT_FILENAMES = {
     "search": "{}/network_log_search_{}.ndjson",
-    "analytics": "{}/network_log_analytics_{}.ndjson"
+    "analytics": "{}/network_log_analytics_{}.ndjson",
+    "analytics avg": "{}/network_log_analytics_avg_{}.ndjson",
 }
 
 def getUnique(field):
@@ -79,6 +78,29 @@ def generateAnalyticsWorkload(query_name, window_size_s=5, runs=1000, seed=42):
             writer.writerow({'query': query_name, 'arguments':
                              [t.strftime("%Y-%m-%dT%H:%M:%S.%fZ") for t in args]})
 
+def getNumericFieldFrequencies():
+    freqs = {}
+
+    for filename in os.listdir(DATA_DIR):
+        if filename.endswith(".ndjson"):
+            with open("{}/{}".format(DATA_DIR, filename)) as f:
+                for jsonObj in f:
+                    record = json.loads(jsonObj)
+                    for k, v in record.items():
+                        # check if an int and not a bool (bools are a subtype of int)
+                        if isinstance(v, int) and not isinstance(v, bool):
+                            freqs[k] = freqs.get(k, 0) + 1
+    return freqs
+
+def generateAggregationWorkload(query_name, runs=1000, seed=42):
+    freqs = getNumericFieldFrequencies()
+
+    with open(OUTPUT_FILENAMES["analytics avg"].format(OUTPUT_DIR, runs), 'w') as f:
+        writer = ndjson.writer(f, ensure_ascii=False)
+        for i in range(runs):
+            field = random.choices(list(freqs.keys()), list(freqs.values()))[0]
+            writer.writerow({'query': query_name, 'arguments': [field]})
+
 def main(newUniqueRun=False):
     if newUniqueRun:
         uniqueVals = getUnique("id.orig_h")
@@ -87,6 +109,7 @@ def main(newUniqueRun=False):
     
     generateSearchWorkload("search id.orig_h", uniqueVals, "id.orig_h", 30)
     generateAnalyticsWorkload("analytics sum orig_bytes", 5, 30)
+    generateAggregationWorkload("analytics avg field", 30)
 
 if __name__ == "__main__":
     main()

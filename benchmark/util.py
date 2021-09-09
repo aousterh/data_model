@@ -5,9 +5,24 @@ import os
 import re
 from resource import getrusage as resource_usage, RUSAGE_SELF
 import subprocess
+import yaml
 from time import time as timestamp
 
 BENCHMARK_DIR = "~/data_model/benchmark"
+
+path_join = os.path.join
+
+_dir = os.path.dirname(os.path.realpath(__file__))
+workload_dir = path_join(_dir, "workload")
+dataset_info = path_join(workload_dir, "dataset.yaml")
+trace_dir = path_join(workload_dir, "trace")
+
+def workload_config(name):
+    with open(path_join(workload_dir, name + ".yaml")) as f:
+        return yaml.load(f, Loader=yaml.Loader)
+
+def trace_file(name):
+    return path_join(trace_dir, name)
 
 def unix_time(function, *args, **kwargs):
     '''Return `real`, `sys` and `user` elapsed time, like UNIX's command `time`

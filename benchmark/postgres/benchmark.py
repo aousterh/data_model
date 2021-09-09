@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 
 import os
+import sys
+
+import numpy as np
 import yaml
 import time
 from multiprocessing import Pool
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 import util
 
@@ -18,157 +21,248 @@ class Benchmark:
             self._benchmark = self._config.get("benchmark", {})
 
         self.conn = None
+        self.tables = None
+        self.table_columns = defaultdict(dict)
+        self.uber_schema: dict = OrderedDict()
 
     def connect(self):
         self.conn = util.db_conn()
-        return self
 
-    def run(self):
+        # fetch all tables
         cursor = self.conn.cursor()
-
-        # get all tables
         cursor.execute("""
             SELECT table_name
             FROM information_schema.tables
             WHERE (table_schema = 'public')
             ORDER BY table_name
         """)
-        tables = [r[0] for r in cursor.fetchall()]
+        self.tables = [r[0] for r in cursor.fetchall()]
 
+        for t in self.tables:
+            cursor.execute(f"""
+                SELECT column_name, data_type FROM 
+                INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{t}';
+            """)
+            columns = {r[0]: r[1] for r in cursor.fetchall() if r[0]}
+            self.table_columns[t] = columns
+            self.uber_schema = {**self.uber_schema, **columns}
+        return self
+
+    def run(self):
         if self._meta.get("warmup", True):
             raise NotImplemented
 
-        # run benchmarks
-        for workload in self._benchmark:
-            wc = util.workload_config(workload)
+        # read workloads
+        for workload, queries in self._benchmark.items():
 
-            for name, param in wc["query"].items():
-                start = time.time()
-                results = list()
-                query_funcs = list()
+            for name in queries:
+                # query configs
+                qc = util.workload_config(workload, query=name)
+
+                # query executor
+                use_union = self._meta.get("use_union", [])
+                use_uber_schema = self._meta.get("use_uber_schema", [])
+
+                def make_exec(_param):
+                    def _exec():
+                        if len(self.tables) == 1 or name in use_union:
+                            return _query(self.tables, _param)
+
+                        with Pool(self._meta.get("num_thread", 1)) as pool:
+                            return pool.starmap(_query, [([_t], _param)
+                                                         for _t in self.tables])
+
+                    return _exec
+
+                # unpack args and create executors
+                executors = list()
+                tf = qc.get("trace_file", None)
+                if tf is None:
+                    args = qc.get("args")
+                else:
+                    args = [row["arguments"] for row in util.read_trace(tf)]
+
+                for arg in args:
+                    params = {**qc, **{"name": name, "arg": arg,
+                                       "schemas": self.table_columns,
+                                       "use_union": name in use_union,
+                                       "uber_schema": self.uber_schema if name in use_uber_schema else None,
+                                       }}
+                    executors.append((make_exec(params), params))
 
                 # create / drop index
-                for t in tables:
-                    _update_index(t, param["field"],
-                                  drop=not param.get("index", False))
+                _f = qc.get("field", "")
+                for _t in self.tables:
+                    if _f not in self.table_columns[_t]:
+                        continue
+                    if "index" in qc:
+                        _drop = not qc.get("index", False)
+                        _update_index(_t, _f, drop=_drop)
 
-                if wc["kind"] == "search":
-                    def make_exec(_v):
-                        def _exec():
-                            if len(tables) > 1:
-                                pool = Pool(self._meta.get("num_thread", 1))
-                                _output = pool.starmap(_search, [(t, param["field"], _v)
-                                                                 for t in tables])
-                            else:
-                                _output = _search(tables[0], param["field"], _v)
-                            return _output
+                # run executors
+                start, results = time.time(), list()
+                for i, (f, params) in enumerate(executors):
+                    print(f"progress: running with {i + 1}/{len(executors)}")
 
-                        return _exec
-
-                    # iterate the values
-                    values = list()
-                    tf = param.get("trace_file", None)
-                    if tf:
-                        values = [row["arguments"][0] for row in util.read_trace(tf)]
-                        values = values[:param.get("batch_size", len(values))]
-                    for v in values:
-                        query_funcs.append((make_exec(v), v))
-
-                elif wc["kind"] == "analytics":
-                    def make_exec(_s, _e):
-                        def _exec():
-                            if len(tables) > 1:
-                                pool = Pool(self._meta.get("num_thread", 1))
-                                _output = pool.starmap(_range_sum, [(t, param["field"],
-                                                                    param["target"], _s, _e)
-                                                                    for t in tables])
-                            else:
-                                _output = _range_sum(tables[0], param["field"],
-                                                     param["target"], _s, _e)
-                            return _output
-
-                        return _exec
-
-                    # iterate the values
-                    values = list()
-                    tf = param.get("trace_file", None)
-                    if tf:
-                        values = [row["arguments"] for row in util.read_trace(tf)]
-                        values = values[:param.get("batch_size", len(values))]
-                    for _start, _end in values:
-                        query_funcs.append((make_exec(_start, _end), f"{_start} {_end}"))
-                else:
-                    raise NotImplemented
-
-                # execute
-                for i, (f, arg) in enumerate(query_funcs):
-                    print(f"progress: running with {i + 1}/{len(query_funcs)}")
                     r = util.benchmark(f, num_iter=self._meta.get("num_run", 1))
 
-                    # dump to log
-                    if wc["kind"] == "search":
-                        val = sum(len(t) for t in r["return"] if t is not None)
-                    elif wc["kind"] == "analytics":
-                        val = sum(t[0][0] for t in r["return"] if t is not None)
-
+                    # get validate and dump to log
                     results.append(OrderedDict({
                         "index": i,
                         "system": "postgres",
-                        "in_format": "index" if param.get("index", False) else "table",
+                        "in_format": "index" if qc.get("index", False) else "table",
                         "out_format": "table",
-                        "query": param["desc"],
+                        "query": qc["desc"].split(" no index")[0], # remove "no index" from query name
                         "start_time": round(time.time() - start, 3),
                         "real": r["real"],
                         "user": r["user"],
                         "sys": r["sys"],
-                        "argument_0": arg,
-                        "validation": val,
+                        "argument_0": params["arg"],
+                        "validation": _get_validate(name, r, use_union),
+                        "instance": self._meta.get("instance", "unknown"),
                     }))
-            util.write_csv(results, f"postgres-{wc['kind']}-{name}{'-index' if param.get('index', False) else ''}.csv")
+
+                f_name = f"postgres-{qc.get('desc', '').replace(' ', '_').replace('.', '_')}.csv"
+                util.write_csv(results, f_name)
 
 
 def _update_index(_t, _k, drop=False):
-    _cursor = util.db_conn().cursor()
+    _conn = util.db_conn()
+    _cursor = _conn.cursor()
+    idx_name = f"{_t}_{_k.replace('.', '_')}"
+
     s = f"""
-        CREATE INDEX "{_k}" ON {_t} ("{_k}" ASC);
-    """ if not drop else """
-        DROP INDEX "{_k}";
+        CREATE INDEX "{idx_name}" ON {_t} ("{_k}");
+    """ if not drop else f"""
+        DROP INDEX "{idx_name}";
     """
     try:
         _cursor.execute(s)
+        _conn.commit()
+        _cursor.close()
+        print(_t, s, "success")
     except Exception as e:
-        pass
+        print(_t, e)
 
 
-def _range_sum(_t, _field, _target, _start, _end):
+def _query(tables, params):
+    r, s, = None, ""
+
+    name = params.get("name", "")
+    for i, _t in enumerate(tables):
+
+        ### Agg
+        if name in {"avg"}:
+            # field to avg
+            _f = params['arg'][0]
+
+            # take agg on table union
+            if params.get("use_union", False):
+                # make the query string..
+                # on last table:
+                if i == len(tables) - 1 and s != "":
+                    s += ") as sub_query;"
+
+                # skip the table if it doesn't have the field
+                if _f not in params["schemas"][_t]:
+                    continue
+
+                # on first table that contains the field:
+                if s == "":
+                    s = f"""
+                        SELECT AVG ("{params['arg'][0]}") 
+                        FROM (
+                        SELECT "{params['arg'][0]}" FROM {_t}
+                    """
+                # on additional table:
+                else:
+                    s += f"""
+                        UNION ALL
+                        SELECT "{params['arg'][0]}" FROM {_t}
+                    """
+            # ..or with map-reduce style
+            else:
+                raise NotImplemented
+
+        ### Search
+        elif name in {"search", "search_no_index",
+                      "search_sort_head", "search_sort_head_no_index"}:
+
+            # on last table
+            if i == len(tables) - 1 and s != "":
+                if name in {"search_sort_head",
+                            "search_sort_head_no_index"}:
+                    s += f"""
+                        ORDER by "{params['sort_field']}"
+                        LIMIT 1000"""
+                s += ";"
+
+            # on missing field
+            if params["field"] not in params["schemas"][_t]:
+                continue
+
+            # on additional tables
+            if params.get("use_union", False) and s != "":
+                s += f"""
+                   UNION ALL """
+
+            columns = ""
+            uber_schema = params.get("uber_schema")
+            if uber_schema is not None:
+                schema = set(params["schemas"][_t])
+                for _name, _typ in uber_schema.items():
+                    if _name not in schema:
+                        columns += f""", NULL::{_typ} AS "{_name}" """
+                    else:
+                        columns += f""", CAST("{_name}" AS {_typ}) "{_name}" """
+            else:
+                columns = "*"
+            columns = columns.lstrip(", ")
+            s += f"""
+                SELECT {columns} FROM {_t}
+                WHERE ("{params['field']}" = '{params['arg'][0]}')"""
+
+        ### Range agg
+        elif name in {"range_sum", "range_sum_no_index"}:
+            s = f"""
+                SELECT SUM ("{params['target']}") AS sum
+                FROM {_t}
+                WHERE "{params['field']}" < '{params['arg'][1]}' 
+                    AND "{params['field']}" > '{params['arg'][0]}';
+            """
+
+        else:
+            raise NotImplemented
+
+    if s == "":
+        return r
+
+    # execute
     _cursor = util.db_conn().cursor()
-    s = f"""
-        SELECT SUM ("{_target}") AS sum
-        FROM {_t}
-        WHERE "{_field}" < '{_end}' AND "{_field}" > '{_start}';
-    """
-    r = None
     try:
         _cursor.execute(s)
         r = _cursor.fetchall()
+        # print(_ts, s, "success")
     except Exception as e:
-        pass
+        print("error:", e)
+        return None
     return r
 
 
-def _search(_t, _k, _v):
-    _cursor = util.db_conn().cursor()
-    s = f"""
-        SELECT * FROM {_t}
-        WHERE ("{_k}" = '{_v}');
-    """
-    r = None
-    try:
-        _cursor.execute(s)
-        r = _cursor.fetchall()
-    except Exception as e:
-        pass
-    return r
+def _get_validate(name, r, union=False):
+    if name in {"search", "search_no_index"}:
+        if union:
+            return len(r["return"])
+        else:
+            return sum([len(t) for t in r["return"] if t is not None])
+    elif name in {"search_sort_head", "search_sort_head_no_index"}:
+        # XXX orig_p of the last column; should be oblivious to the dataset
+        return r["return"][-1][9]
+    elif name in {"range_sum", "range_sum_no_index"}:
+        return sum(t[0][0] for t in r["return"] if t is not None)
+    elif name in {"avg"}:
+        return np.average([float(t[0]) for t in r["return"] if t is not None])
+    return ""
 
 
 def main():
