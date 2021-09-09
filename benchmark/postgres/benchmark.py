@@ -118,7 +118,7 @@ class Benchmark:
                         "user": r["user"],
                         "sys": r["sys"],
                         "argument_0": params["arg"],
-                        "validation": _get_validate(name, r),
+                        "validation": _get_validate(name, r, use_union),
                         "instance": self._meta.get("instance", "unknown"),
                     }))
 
@@ -249,9 +249,12 @@ def _query(tables, params):
     return r
 
 
-def _get_validate(name, r):
+def _get_validate(name, r, union=False):
     if name in {"search", "search_no_index"}:
-        return sum([len(t) for t in r["return"] if t is not None])
+        if union:
+            return len(r["return"])
+        else:
+            return sum([len(t) for t in r["return"] if t is not None])
     elif name in {"search_sort_head", "search_sort_head_no_index"}:
         # XXX orig_p of the last column; should be oblivious to the dataset
         return r["return"][-1][9]
