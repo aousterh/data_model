@@ -93,7 +93,7 @@ class Benchmark:
                 # create / drop index
                 _f = qc.get("field", "")
                 for _t in self.tables:
-                    if _f not in self.table_columns:
+                    if _f not in self.table_columns[_t]:
                         continue
                     if "index" in qc:
                         _drop = not qc.get("index", False)
