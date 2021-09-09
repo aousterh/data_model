@@ -115,7 +115,9 @@ class Benchmark:
                         "argument_0": arg,
                         "validation": {
                             "search": lambda x: len(x),
+                            "search_no_index": lambda x: len(x),
                             "search_sort_head": lambda x: x[-1]["id"]["orig_p"],
+                            "search_sort_head_no_index": lambda x: x[-1]["id"]["orig_p"],
                         }.get(name, lambda x: x)(r["return"]),
                         "instance": self._meta.get("instance", "unknown"),
                     }))
