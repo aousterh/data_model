@@ -107,7 +107,7 @@ class Benchmark:
                         "system": "mongo",
                         "in_format": "index" if qc.get("index", False) else "bson",
                         "out_format": "json",
-                        "query": qc["desc"],
+                        "query": qc["desc"].split(" no index")[0], # remove "no index" from query name
                         "start_time": round(time.time() - start, 3),
                         "real": r["real"],
                         "user": r["user"],
