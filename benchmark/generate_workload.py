@@ -10,6 +10,7 @@ import random
 
 #DATA_DIR=os.getcwd()
 DATA_DIR="/zq-sample-data/zeek-ndjson"
+BASE_DIR="/local/zeek-data-all/subset_80_million"
 ZNG_DIR="/zq-sample-data/z/zng"
 OUTPUT_DIR="workload/trace"
 OUTPUT_FILENAMES = {
@@ -22,10 +23,12 @@ def getUnique(field):
     recordList =[]
     possibleVals= []
     df = pd.DataFrame()
-    directory = DATA_DIR
+    directory = BASE_DIR
     for filename in os.listdir(directory):
-        if filename.endswith(".ndjson"):
-            with open("{}/{}".format(DATA_DIR, filename)) as f:
+        # id_orig_h.ndjson includes a single column containing all unique
+        # id.orig_h fields from the data
+        if filename.endswith("id_orig_h.ndjson"):
+            with open("{}/{}".format(BASE_DIR, filename)) as f:
                 for jsonObj in f:
                     record = json.loads(jsonObj)
                     try:
@@ -81,9 +84,10 @@ def generateAnalyticsWorkload(query_name, window_size_s=5, runs=1000, seed=42):
 def getNumericFieldFrequencies():
     freqs = {}
 
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith(".ndjson"):
-            with open("{}/{}".format(DATA_DIR, filename)) as f:
+    for filename in os.listdir(BASE_DIR):
+        # type_samples.ndjson includes a sample value of each different type
+        if filename.endswith("type_samples.ndjson"):
+            with open("{}/{}".format(BASE_DIR, filename)) as f:
                 for jsonObj in f:
                     record = json.loads(jsonObj)
                     for k, v in record.items():
@@ -101,15 +105,17 @@ def generateAggregationWorkload(query_name, runs=1000, seed=42):
             field = random.choices(list(freqs.keys()), list(freqs.values()))[0]
             writer.writerow({'query': query_name, 'arguments': [field]})
 
-def main(newUniqueRun=False):
+def main(newUniqueRun=True):
+    search_field = "orig_h"
+
     if newUniqueRun:
-        uniqueVals = getUnique("id.orig_h")
+        uniqueVals = getUnique(search_field)
     else:
         uniqueVals = pd.read_csv('{}/{}'.format(OUTPUT_DIR, UNIQUE_VALS_FILE), delimiter='\n')["id.orig_h"].to_list()
     
-    generateSearchWorkload("search id.orig_h", uniqueVals, "id.orig_h", 30)
-    generateAnalyticsWorkload("analytics sum orig_bytes", 5, 30)
-    generateAggregationWorkload("analytics avg field", 30)
+    generateSearchWorkload("search id.orig_h", uniqueVals, search_field, 100)
+#    generateAnalyticsWorkload("analytics sum orig_bytes", 5, 30)
+    generateAggregationWorkload("analytics avg field", 100)
 
 if __name__ == "__main__":
     main()
