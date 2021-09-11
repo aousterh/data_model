@@ -6,8 +6,8 @@ meta:
   num_thread: 4
   seed: 42
   instance: m5.xlarge
-  use_union: [ "avg", "search", "search_sort_head", "search_sort_head_no_index" ]
-  use_uber_schema: [ "search", "search_sort_head", "search_sort_head_no_index" ]
+  use_union: [ "avg", "search", "search_no_index", "search_sort_head", "search_sort_head_no_index" ]
+  use_uber_schema: [ "search", "search_no_index", "search_sort_head", "search_sort_head_no_index" ]
 benchmark:
   network_log_analytics: [ "avg" ]
   network_log_search: [ "search" , "search_sort_head",
