@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from abc import ABC, abstractmethod
+from datetime import datetime
+import glob
 import json
 import os
 import re
@@ -11,8 +13,10 @@ sys.path.insert(1, "..")
 from util import *
 
 # assume volume is mounted at /zq-sample-data
-BASE_DIR = "/zq-sample-data"
+#BASE_DIR = "/zq-sample-data"
+BASE_DIR = "/local/zeek-data-all/subset_80_million"
 DATA = BASE_DIR + "/z"
+LOG_DIR = "{}/logs".format(BASE_DIR)
 RESULTS_CSV = "end_to_end_zed.csv"
 config = None
 meta = None
@@ -116,8 +120,8 @@ class AnalyticsAvgQuery(Query):
 QUERIES = {str(q): q for q in [SearchQuery(), SearchSortHeadQuery(),
                                AnalyticsRangeTsSumQuery(), AnalyticsAvgQuery()]}
 
-def data_path(fmt):
-    if meta.get("input_one_file", True):
+def data_path(fmt, data_load=False):
+    if meta.get("input_one_file", True) or data_load:
         return "{}/all.{}".format(DATA, fmt)
     else:
         return "{}/{}/*".format(DATA, fmt)
@@ -126,7 +130,7 @@ zq_cmd = "zq -validate=false -i {} {} \"{}\" {}"
 zed_lake_cmd = "zed lake query {} \"from p1 {} | {}\""
 
 def create_lake():
-    log_dir = os.path.join(os.getcwd(), "logs")
+    log_dir = os.path.join(os.getcwd(), LOG_DIR)
     if os.path.exists(log_dir):
         shutil.rmtree(log_dir)
     os.mkdir(log_dir)
@@ -138,14 +142,14 @@ def setup_lake():
     create_lake()
 
     os.system("zed lake create -p p1")
-    os.system("zed lake load -p p1 {}".format(data_path("zng")))
+    os.system("zed lake load -p p1 {}".format(data_path("zng", True)))
 
 def setup_lake_hack():
     global index_rule_id
     create_lake()
 
-    os.system("zed lake create -p p1 -S 20MB")
-    os.system("zed lake load -p p1 {}".format(data_path("zng")))
+    os.system("zed lake create -p p1")
+    os.system("zed lake load -p p1 {}".format(data_path("zng", True)))
 
     # create index and get ID
     results = os.popen("zed lake index create TEST field id.orig_h").read()
@@ -155,18 +159,25 @@ def setup_lake_hack():
         if m is not None:
             index_rule_id = m.groups()[0]
 
-    results = os.popen("zed lake log -p p1").read()
-
-    # parse out object IDs
+    # get object IDs
+    obj_file_names = glob.glob("{}/1y0*/data/*-seek.zng".format(LOG_DIR))
     ids = []
-    for l in results.split("\n"):
-        m = re.search(r"\s*(.*)\s+(\d+) records in", l)
+    for f in obj_file_names:
+        m = re.search(r"data/(.*)-seek.zng", f)
         if m is not None:
             ids.append(m.groups()[0])
 
     # apply index to objects
     for i in ids:
         os.system("zed lake index apply -p p1 TEST {}".format(i))
+
+    # generate plain ZST data using same chunks
+    os.system("rm -fr {}/zst/*".format(DATA))
+    for i in ids:
+        if m is not None:
+            zng_file = "{}/1y0*/data/{}.zng".format(LOG_DIR, i)
+            zst_file = "{}/zst/{}.zst".format(DATA, i)
+        os.system("zq -f zst -validate=false -o {} {}".format(zst_file, zng_file))
 
 def run_benchmark(query_description, f_input, f_output=sys.stdout,
                   input_fmt="zng", output_fmt="zng"):
@@ -194,7 +205,8 @@ def run_benchmark(query_description, f_input, f_output=sys.stdout,
 
         flags_str = " ".join(flags)
 
-        if input_fmt == "lake":
+        if input_fmt == "lake" or input_fmt == "zng":
+            # issue both using lake
             query_range = query.get_range(args)
             cmd = zed_lake_cmd.format(flags_str, query_range, zq_query)
         else:
@@ -202,6 +214,7 @@ def run_benchmark(query_description, f_input, f_output=sys.stdout,
                                 data_path(input_fmt))
         query_time = time.time()
 
+        print("running cmd: {}".format(cmd))
         results = unix_time_bash(cmd, stdout=subprocess.PIPE)
 
         validation = query.get_validation(results["return"])
@@ -228,8 +241,13 @@ def main():
         meta = config.get("meta", {})
         benchmark = config.get("benchmark", {})
 
+    before = datetime.now()
+    print("starting lake setup at: {}".format(before))
     setup_lake_hack()
+    after = datetime.now()
+    print("finished lake setup at: {}, took: {}".format(after, after - before))
 
+    before = datetime.now()
     with open(RESULTS_CSV, 'w') as f_output:
         f_output.write("index,system,in_format,out_format,query,start_time,real,user,sys,argument_0,validation,instance\n")
 
@@ -243,6 +261,8 @@ def main():
                     with open(t_file, 'r') as f_input:
                         run_benchmark(q_config.get("desc"), f_input, f_output,
                                       input_fmt, output_fmt)
+    after = datetime.now()
+    print("finished querying at: {}, took: {}".format(after, after - before))
 
 if __name__ == '__main__':
     main()
