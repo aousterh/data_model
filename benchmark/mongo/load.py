@@ -10,6 +10,8 @@ import glob
 import util
 from util import timed, path_join
 
+import multiprocessing
+
 
 @timed
 def load():
@@ -26,15 +28,27 @@ def load():
 
     with tempfile.TemporaryDirectory() as d:
         os.system(f"cp -r {src}/* {d}")
-        os.system(f"cd {d}; gzip -d *.gz")
+        os.system(f"cd {d}; gzip -d *.gz || true; "
+                  f"echo 'ignored; assume uncompressed data'")
         fs = glob.glob(path_join(d, "*.ndjson"))
 
-        col = os.environ.get("COL", None)
-        for f in fs:
-            os.system(f"mongoimport -d "
-                      f"{os.environ['DB']} "
-                      f"{f'-c {col} ' if col is not None else ''}"
-                      f"{f}")
+        pool = multiprocessing.Pool(multiprocessing.cpu_count())
+        pool.map(_import, fs)
+
+        # col = os.environ.get("COL", "zed")
+        # for f in fs:
+        #     os.system(f"mongoimport -d "
+        #               f"{os.environ['DB']} "
+        #               f"{f'-c {col} ' if col is not None else ''}"
+        #               f"{f}")
+
+
+def _import(f):
+    col = os.environ.get("COL", "zed")
+    os.system(f"mongoimport -d "
+              f"{os.environ['DB']} "
+              f"{f'-c {col} ' if col is not None else ''}"
+              f"{f}")
 
 
 if __name__ == '__main__':
