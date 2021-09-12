@@ -1,5 +1,9 @@
 .PHONY: init stop start load run
-DB := .postgres
+DIR := .postgres
+ifndef DB
+override DB = zed
+endif
+
 CONFIG := default
 
 # To prepare the database:
@@ -16,12 +20,12 @@ install:
 	sudo apt-get update
 	sudo apt -y install postgresql-13 postgresql-client-13 libpq-dev
 init:
-	rm -fr $(DB)
-	initdb $(DB)
-	sudo chmod a+w /var/run/postgresql
+	rm -fr $(DIR)
+	initdb $(DIR)
+	sudo chmod a+w /var/run/postgresql || true
 start: | stop
 	# sudo systemctl stop postgresql@13-main
-	pg_ctl -D $(DB) --log=log.txt start
+	pg_ctl -D $(DIR) --log=log.txt start
 prep:
 	psql postgres -c "CREATE ROLE zed WITH LOGIN PASSWORD 'zed'" || true
 	psql postgres -c "CREATE DATABASE zed" || true
@@ -29,5 +33,12 @@ load:
 	./load.py
 run:
 	CONFIG=$(CONFIG) ./benchmark.py | tee out.txt 2> err.txt
+prep-nested:
+	psql postgres -c "CREATE ROLE nested WITH LOGIN PASSWORD 'nested'" || true
+	psql postgres -c "CREATE DATABASE nested " || true
+load-nested:
+	FORMAT=ndjson-nested DB=nested ./load.py
+run-nested:
+	DB=nested CONFIG=$(CONFIG) ./benchmark.py | tee out.txt 2> err.txt
 stop:
-	pg_ctl -D $(DB) stop || true
+	pg_ctl -D $(DIR) stop || true

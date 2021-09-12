@@ -2,17 +2,14 @@
 import java.io.File
 import java.sql.Timestamp
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.apache.spark.sql.functions.{col, lit, sum, to_timestamp}
+import org.apache.spark.sql.functions.{avg, col, lit, sum, to_timestamp}
 import org.apache.spark.sql.types.{LongType, StringType, StructField, StructType}
 import scala.sys.process._
 import scala.util.Try
 
 object EndtoEnd {
   val PARQUET_PATH = "/zq-sample-data/parquet/"
-  val WORKLOAD = "../../workload/trace/network_log_search_30.ndjson"
-//  val WORKLOAD = "../../workload/trace/network_log_analytics_30.ndjson"
   val RESULTS_PATH = "results"
-  val OUTPUT_PATH = "output"
   val INSTANCE = "m5.xlarge"
 
   def hasColumn(df: DataFrame, path: String) = Try(df(path)).isSuccess
@@ -45,10 +42,6 @@ object EndtoEnd {
       // issue the query
       val search_results = dfs.map(df => df.filter(col("id.orig_h") === ip))
 
-      // write the results out as parquet, to ensure the query actually executed
-      for (df <- search_results)
-        df.write.mode("append").parquet(OUTPUT_PATH)
-
       return search_results
     }
 
@@ -62,7 +55,7 @@ object EndtoEnd {
     }
   }
 
-  class SearchUberQuery extends Query
+  class SearchSortHeadQuery extends Query
   {
     def run(spark: SparkSession, files: List[String], args: Array[String]) : List[DataFrame] = {
       val ip = args(0)
@@ -70,7 +63,7 @@ object EndtoEnd {
       // load dataframes that contain the search column
       val dfs = for {
         x <- files
-        val df = spark.read.parquet(x)
+        val df = spark.read.parquet(x).withColumn("ts", to_timestamp(col("ts")))
         if hasColumn(df, "id.orig_h")
       } yield df
 
@@ -83,28 +76,43 @@ object EndtoEnd {
           df
       }
 
-      // create the uber schema
-      val all_columns = cleaned_dfs.map(df => df.columns.toSet).reduce(_ ++ _)
+      // filter dataframes for rows with the matching IP, skip dataframes with
+      // no matching rows
+      val search_dfs = for {
+        df <- cleaned_dfs
+        val df_filtered = df.filter(col("id.orig_h") === ip)
+        if df_filtered.count() > 0
+      } yield df_filtered
 
-      // issue the query, use customSelect to uber the results as you go
-      val search_df = cleaned_dfs.map(df => df.select(customSelect(df, all_columns):_*)
-        .filter(col("id.orig_h") === ip))
+      if (search_dfs.length == 1) {
+        // only one dataframe had matching results, no uber necessary
+        // just sort and return first 1000
+        val search_df = search_dfs(0).orderBy("ts").limit(1000).toDF()
+        return List(search_df)
+      }
+
+      // multiple dataframes match, use an uber schema to combine them
+      val all_columns = search_dfs.map(df => df.columns.toSet).reduce(_ ++ _)
+
+      val search_df = search_dfs.map(df => df.select(customSelect(df, all_columns):_*))
         .reduce(_.union(_))
+        .orderBy("ts")
+        .limit(1000)
         .toDF()
-
-      // write the results out as parquet, to ensure the query actually executed
-      search_df.write.mode("append").parquet(OUTPUT_PATH)
 
       return List(search_df)
     }
 
     def get_validation(result_dfs: List[DataFrame]) : Long = {
-      // count records returned
-      return result_dfs.map(df => df.count()).sum
+      // return source port of last result
+      val ports = result_dfs(0).select(col("id.orig_p"))
+      val count = ports.count()
+      val p = ports.collect()(count.toInt-1)(0).asInstanceOf[Long]
+      return p
     }
 
     override def toString() : String = {
-      return "search id.orig_h uber"
+      return "search sort head id.orig_h"
     }
   }
 
@@ -125,13 +133,9 @@ object EndtoEnd {
       // issue the query
       val analytics_df = dfs.map(df => df.filter(col("ts") >= ts_min && col("ts") < ts_max)
         .select(col("orig_bytes"))
-        .agg(sum("orig_bytes")))
+        .agg(sum("orig_bytes").as("sum")))
         .reduce(_.union(_))
-        .agg(sum("sum(orig_bytes)"))
-        .select(col("sum(sum(orig_bytes))").as("sum"))
-
-      // write the results out as parquet, to ensure the query actually executed
-      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
+        .agg(sum("sum").as("sum"))
 
       return List(analytics_df)
     }
@@ -141,14 +145,46 @@ object EndtoEnd {
     }
 
     override def toString() : String = {
-      return "analytics sum orig_bytes"
+      return "analytics range ts sum orig_bytes"
     }
   }
 
-  // mapping from string ID of each query to its Query class
-  val QUERY_ARRAY = Array(new SearchQuery(), new SearchUberQuery(),
-    new AnalyticsSumOrigBytesQuery())
-  val QUERY_MAP = QUERY_ARRAY.map(q => q.toString() -> q).toMap
+  class AnalyticsAvgQuery extends Query
+  {
+    def run(spark: SparkSession, files: List[String], args: Array[String]) : List[DataFrame] = {
+      val agg_column = args(0)
+
+      // load dataframes that contain the aggregation column
+      val dfs = for {
+        x <- files
+        val df = spark.read.parquet(x)
+        if hasColumn(df, agg_column)
+      } yield df
+
+      // issue the query
+      // refer to nested id fields without the "id." since the select removes it
+      val analytics_df = dfs.map(df => df.select(col(agg_column)))
+        .reduce(_.union(_))
+        .agg(avg(agg_column.stripPrefix("id.")).as("avg"))
+
+      return List(analytics_df)
+    }
+
+    def get_validation(result_dfs: List[DataFrame]) : Long = {
+      // round to Long for type consistency
+      return result_dfs(0).collect()(0)(0).asInstanceOf[Double].toLong
+    }
+
+    override def toString() : String = {
+      return "analytics avg field"
+    }
+  }
+
+  // array of (trace_file, query class) tuples
+  val workloads = Array(("../../workload/trace/network_log_search_needles_30.ndjson", new SearchQuery()),
+    //("../../workload/trace/network_log_analytics_30.ndjson", new AnalyticsSumOrigBytesQuery())
+    ("../../workload/trace/network_log_search_needles_30.ndjson", new SearchSortHeadQuery()),
+    ("../../workload/trace/network_log_analytics_avg_30.ndjson", new AnalyticsAvgQuery()))
 
   def getListOfParquetFiles(dir: String):List[String] = {
     val d = new File(dir)
@@ -159,11 +195,12 @@ object EndtoEnd {
     l.map(f => f.toString()).filter(_.endsWith(".parquet"))
   }
 
-  def run_benchmark(spark: SparkSession, files: List[String]) = {
+  def run_benchmark(spark: SparkSession, files: List[String], trace_file_name: String,
+    query: Query, include_header: String) = {
     import spark.implicits._
 
     // read in queries to execute
-    val queries = spark.read.json(WORKLOAD).select(col("query").as("query"),
+    val queries = spark.read.json(trace_file_name).select(col("query").as("query"),
       col("arguments").getItem(0).as("arg0"),
       col("arguments").getItem(1).as("arg1")).collect()
 
@@ -179,12 +216,13 @@ object EndtoEnd {
     var index = 0
     for (query_description <- queries) {
       val seq = query_description.toSeq
-      val query = QUERY_MAP(seq(0).toString())
       val arg0 = if (seq(1) != null) seq(1).toString else ""
       val arg1 = if (seq(2) != null) seq(2).toString else ""
 
+      // run the query and collect results at the driver
       val before = System.nanoTime
       val result_dataframes = query.run(spark, files, Array(arg0, arg1))
+      result_dataframes.map(df => df.collect())
       val runtime = (System.nanoTime - before) / 1e9d
 
       val validation = query.get_validation(result_dataframes)
@@ -197,14 +235,21 @@ object EndtoEnd {
     }
 
     all_results.toDF(results_fields:_*).coalesce(1).write.format("csv")
-      .option("header", "true").save(RESULTS_PATH)
+      .mode("append").option("header", include_header).save(RESULTS_PATH)
+
+    print("\n")
   }
 
   def main(args: Array[String]) {
     val spark = SparkSession.builder.appName("Spark Benchmark").getOrCreate()
 
     val parquet_files = getListOfParquetFiles(PARQUET_PATH)
-    run_benchmark(spark, parquet_files)
+
+    var include_header = "true"
+    for (w <- workloads) {
+      run_benchmark(spark, parquet_files, w._1, w._2, include_header)
+      include_header = "false"
+    }
 
     spark.stop()
   }
