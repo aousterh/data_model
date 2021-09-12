@@ -28,10 +28,12 @@ def load():
     src = path_join(util.workload_dir, loc)
 
     with tempfile.TemporaryDirectory() as d:
-        os.system(f"cp -r {src}/* {d}")
-        os.system(f"cd {d}; gzip -d *.gz || true; "
-                  f"echo 'ignored; assume uncompressed data'")
-        fs = glob.glob(path_join(d, "*.ndjson"))
+        if os.environ.get("NOZIP"):
+            os.system(f"cp -r {src}/* {d}")
+            os.system(f"cd {d}; gzip -d *.gz || true")
+            fs = glob.glob(path_join(d, "*.ndjson"))
+        else:
+            fs = glob.glob(path_join(src, "*.ndjson"))
 
         if os.environ.get("RAY"):
             _ = ray.get([_ray_import.remote(f) for f in fs])
