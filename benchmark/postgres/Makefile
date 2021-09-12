@@ -14,6 +14,10 @@ CONFIG := default
 # Then run the benchmark:
 # make run
 
+### Parallel load with Ray and skip decompression:
+### 	NOZIP=true RAY=true make load
+###
+
 install:
 	sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
 	wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -

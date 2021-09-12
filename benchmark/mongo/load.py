@@ -28,7 +28,7 @@ def load():
     src = path_join(util.workload_dir, loc)
 
     with tempfile.TemporaryDirectory() as d:
-        if os.environ.get("NOZIP"):
+        if not os.environ.get("NOZIP"):
             os.system(f"cp -r {src}/* {d}")
             os.system(f"cd {d}; gzip -d *.gz || true")
             fs = glob.glob(path_join(d, "*.ndjson"))
