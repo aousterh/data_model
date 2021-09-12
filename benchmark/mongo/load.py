@@ -10,6 +10,7 @@ import glob
 import util
 from util import timed, path_join
 
+import ray
 import multiprocessing
 
 
@@ -32,8 +33,11 @@ def load():
                   f"echo 'ignored; assume uncompressed data'")
         fs = glob.glob(path_join(d, "*.ndjson"))
 
-        pool = multiprocessing.Pool(multiprocessing.cpu_count())
-        pool.map(_import, fs)
+        if os.environ.get("RAY"):
+            _ = ray.get([_ray_import.remote(f) for f in fs])
+        else:
+            pool = multiprocessing.Pool(multiprocessing.cpu_count())
+            pool.map(_import, fs)
 
         # col = os.environ.get("COL", "zed")
         # for f in fs:
@@ -41,6 +45,11 @@ def load():
         #               f"{os.environ['DB']} "
         #               f"{f'-c {col} ' if col is not None else ''}"
         #               f"{f}")
+
+
+@ray.remote
+def _ray_import(*args, **kwargs):
+    _import(*args, *kwargs)
 
 
 def _import(f):
@@ -52,4 +61,6 @@ def _import(f):
 
 
 if __name__ == '__main__':
+    if os.environ.get("RAY"):
+        ray.init()
     load()
