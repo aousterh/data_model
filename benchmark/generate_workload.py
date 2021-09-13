@@ -98,6 +98,7 @@ def getNumericFieldFrequencies():
 
 def generateAggregationWorkload(query_name, runs=1000, seed=42):
     freqs = getNumericFieldFrequencies()
+    del freqs["version"] # sometimes numeric but sometimes a string
 
     with open(OUTPUT_FILENAMES["analytics avg"].format(OUTPUT_DIR, runs), 'w') as f:
         writer = ndjson.writer(f, ensure_ascii=False)

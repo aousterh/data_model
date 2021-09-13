@@ -18,5 +18,5 @@ query:
   avg:
     ops: [ "avg" ]
 #    trace_file: "network_log_analytics_avg_30.ndjson"
-    trace_file: "network_log_80_million_analytics_avg_100.ndjson"
+    trace_file: "network_log_80_million_analytics_avg_100_omit_version.ndjson"
     desc: "analytics avg field"
