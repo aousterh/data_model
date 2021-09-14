@@ -1,5 +1,5 @@
 .PHONY: init stop start load run
-DIR := .postgres
+DIR := /local/zeek-data-all/subset_80_million/.postgres
 ifndef DB
 override DB = zed
 endif
@@ -34,7 +34,7 @@ prep:
 	psql postgres -c "CREATE ROLE zed WITH LOGIN PASSWORD 'zed'" || true
 	psql postgres -c "CREATE DATABASE zed" || true
 load:
-	./load.py
+	NOZIP=true ./load.py > out.txt 2> err.txt
 run:
 	CONFIG=$(CONFIG) ./benchmark.py | tee out.txt 2> err.txt
 prep-nested:
