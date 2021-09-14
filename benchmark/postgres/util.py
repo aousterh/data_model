@@ -19,8 +19,10 @@ trace_dir = path_join(workload_dir, "trace")
 import sqlalchemy
 import psycopg2
 
+DB = os.environ.get("DB", "zed")
 
-def db_conn(conn_str='postgresql://zed:zed@localhost/zed',
+
+def db_conn(conn_str=f"postgresql://{DB}:{DB}@localhost/{DB}",
             use_sqlalchemy=False):
     if use_sqlalchemy:
         db = sqlalchemy.create_engine(conn_str)

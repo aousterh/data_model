@@ -9,6 +9,10 @@ CONFIG := default
 # iii. Benchmark: make run
 # Do not run make load twice with the same DB
 
+### Parallel load with Ray and skip decompression:
+### 	NOZIP=true RAY=true make load
+###
+
 install:
 	wget -qO - https://www.mongodb.org/static/pgp/server-4.2.asc | sudo apt-key add -
 	echo "deb http://repo.mongodb.org/apt/debian stretch/mongodb-org/4.2 main" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.2.list

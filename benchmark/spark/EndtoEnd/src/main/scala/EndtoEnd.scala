@@ -8,9 +8,11 @@ import scala.sys.process._
 import scala.util.Try
 
 object EndtoEnd {
-  val PARQUET_PATH = "/zq-sample-data/parquet/"
+//  val PARQUET_PATH = "/zq-sample-data/parquet/"
+  val PARQUET_PATH = "/local/zeek-data-all/subset_80_million/parquet/"
   val RESULTS_PATH = "results"
-  val INSTANCE = "m5.xlarge"
+  val OUTPUT_PATH = "/local/zeek-data-all/spark-output"
+  val INSTANCE = "m5d.2xlarge"
 
   def hasColumn(df: DataFrame, path: String) = Try(df(path)).isSuccess
 
@@ -41,6 +43,10 @@ object EndtoEnd {
 
       // issue the query
       val search_results = dfs.map(df => df.filter(col("id.orig_h") === ip))
+
+      // write the results out as parquet, to ensure the query actually executed
+      for (df <- search_results)
+        df.write.mode("append").parquet(OUTPUT_PATH)
 
       return search_results
     }
@@ -76,10 +82,18 @@ object EndtoEnd {
           df
       }
 
+      // rename columns of null tunnel_parents. casting to an array of strings would be better if possible.
+      val cleaned_dfs_2 = for (df <- cleaned_dfs) yield {
+        if (df.columns.contains("tunnel_parents") && df.schema("tunnel_parents").dataType == StringType)
+          df.withColumnRenamed("tunnel_parents", "tunnel_parents_str")
+        else
+          df
+      }
+
       // filter dataframes for rows with the matching IP, skip dataframes with
       // no matching rows
       val search_dfs = for {
-        df <- cleaned_dfs
+        df <- cleaned_dfs_2
         val df_filtered = df.filter(col("id.orig_h") === ip)
         if df_filtered.count() > 0
       } yield df_filtered
@@ -88,6 +102,10 @@ object EndtoEnd {
         // only one dataframe had matching results, no uber necessary
         // just sort and return first 1000
         val search_df = search_dfs(0).orderBy("ts").limit(1000).toDF()
+
+        // write the results out as parquet, to ensure the query actually executed
+        search_df.write.mode("append").parquet(OUTPUT_PATH)
+
         return List(search_df)
       }
 
@@ -99,6 +117,9 @@ object EndtoEnd {
         .orderBy("ts")
         .limit(1000)
         .toDF()
+
+      // write the results out as parquet, to ensure the query actually executed
+      search_df.write.mode("append").parquet(OUTPUT_PATH)
 
       return List(search_df)
     }
@@ -137,6 +158,9 @@ object EndtoEnd {
         .reduce(_.union(_))
         .agg(sum("sum").as("sum"))
 
+      // write the results out as parquet, to ensure the query actually executed
+      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
+
       return List(analytics_df)
     }
 
@@ -167,6 +191,9 @@ object EndtoEnd {
         .reduce(_.union(_))
         .agg(avg(agg_column.stripPrefix("id.")).as("avg"))
 
+      // write the results out as parquet, to ensure the query actually executed
+      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
+
       return List(analytics_df)
     }
 
@@ -181,10 +208,14 @@ object EndtoEnd {
   }
 
   // array of (trace_file, query class) tuples
-  val workloads = Array(("../../workload/trace/network_log_search_needles_30.ndjson", new SearchQuery()),
+  val workloads = Array(("../../workload/trace/network_log_80_million_search_100.ndjson", new SearchQuery()),
+    ("../../workload/trace/network_log_80_million_search_100.ndjson", new SearchSortHeadQuery()),
+    ("../../workload/trace/network_log_80_million_analytics_avg_100_omit_version.ndjson", new AnalyticsAvgQuery()))
+
+    /*("../../workload/trace/network_log_search_needles_30.ndjson", new SearchQuery()),
     //("../../workload/trace/network_log_analytics_30.ndjson", new AnalyticsSumOrigBytesQuery())
     ("../../workload/trace/network_log_search_needles_30.ndjson", new SearchSortHeadQuery()),
-    ("../../workload/trace/network_log_analytics_avg_30.ndjson", new AnalyticsAvgQuery()))
+    ("../../workload/trace/network_log_analytics_avg_30.ndjson", new AnalyticsAvgQuery()))*/
 
   def getListOfParquetFiles(dir: String):List[String] = {
     val d = new File(dir)
@@ -219,10 +250,10 @@ object EndtoEnd {
       val arg0 = if (seq(1) != null) seq(1).toString else ""
       val arg1 = if (seq(2) != null) seq(2).toString else ""
 
-      // run the query and collect results at the driver
+      // run the query
       val before = System.nanoTime
       val result_dataframes = query.run(spark, files, Array(arg0, arg1))
-      result_dataframes.map(df => df.collect())
+//      result_dataframes.map(df => df.collect())
       val runtime = (System.nanoTime - before) / 1e9d
 
       val validation = query.get_validation(result_dataframes)
@@ -231,6 +262,7 @@ object EndtoEnd {
         query.toString(), (before - start_time) / 1e9d, runtime, 0.0, 0.0, arg0,
         validation, INSTANCE)
       index += 1
+      print("runtime: " + runtime.toString + ", arg: " + arg0 + "\n")
       print(".")
     }
 
