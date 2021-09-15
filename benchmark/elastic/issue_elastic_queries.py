@@ -17,44 +17,35 @@ aggregation_fields = AGGREGATION_FIELDS
 def runQuery(query, queryname):
     cmd = query + " > " + output_directory + "query-output.json"
     os.system(cmd)
-    
-    if queryname == "search id.orig_h":
-    	sortvals = []
-    
+
+    last_ports = []
+
     with open(output_directory + "query-output.json", 'r') as j:
         contents = json.loads(j.read())
         executiontime = contents["took"]
         hits = contents["hits"]["total"]["value"]
-        avg = contents["aggregations"]["avg_field"]["value"]
-        ret = {"executiontime": executiontime * 0.001, "hits": hits, "sortval": 0, "avg": avg}
-        if queryname == "search id.orig_h":
-	       for content in contents["hits"]["hits"]:
-	           sortvals.append(content["sort"])
-	        if sortvals:
-	            sortval = sortvals.pop()[0]
-	            if sortval:
-	                ret["sortval"] = sortval
+        if queryname == "analytics avg field":
+            avg = contents["aggregations"]["avg_field"]["value"]
+        else:
+            avg = 0
+        if queryname == "search id.orig_h + sort ts + slice 1000":
+            for content in contents["hits"]["hits"]:
+                last_ports.append(content["_source"]["id.orig_p"])
+            last_port = last_ports.pop()
+        else:
+            last_port = 0
+        ret = {"executiontime": executiontime * 0.001, "hits": hits, "avg": avg, "last_port": last_port }
+
     os.system("rm " + output_directory + "query-output.json")
     return ret
 
 def getQuery(queryname, arguments, sortval):
     if queryname == "search id.orig_h":
-        if sortval:
-            query = "curl -X GET \"localhost:9200/test/_search?pretty\" -H 'Content-Type: application/json' -d' { \"search_after\": ["+str(sortval)+"] , \"sort\": [{\"ts\": \"asc\"}],\"query\" : {\"term\" : {\"id.orig_h\" : \""+arguments[0]+"\" } } } '"
-        else:
-            query = "curl -X GET \"localhost:9200/test/_search?pretty\" -H 'Content-Type: application/json' -d' {  \"sort\": [{\"ts\": \"asc\"}], \"query\" : {\"term\" : { \"id.orig_h\" : \""+arguments[0]+"\" } } } '"
+        query = "curl -X POST \"localhost:9200/test/_search?scroll=1m&pretty\" -H 'Content-Type: application/json' -d'{\"query\": {\"term\" : {\"id.orig_h\" : \""+arguments[0]+"\"}}}'"
     elif queryname == "search id.orig_h + sort ts + slice 1000":
-        query = "curl -X GET \"localhost:9200/test/_search?format=json&pretty\" -H 'Content-Type: application/json' -d'{\"size\": 1000,\"sort\" : [{\"ts\" : {\"order\": \"asc\" }}],\"query\" : {\"term\" : { \"id.orig_h\" : \""+arguments[0]+"\" }}}'"
-   	elif queryname == "analytics avg field":
-        query = "curl -X GET \"localhost:9200/test/_search?pretty\" -H 'Content-Type: application/json' -d'{\"aggs\": {\"avg_field\": {\"avg\": { \"field\": \""+arguments[0]+"\"}}}}'"
-    # elif queryname == "search id.orig_h + count by id.resp_h":
-    #     query  = "curl -X GET \"localhost:9200/test/_search?format=json&pretty\" -H 'Content-Type: application/json' -d'{\"query\" : {\"term\" : { \"id.orig_h\" : \""+ arguments[0] +"\" }}, \"aggs\": {\"id.resp_h\": {\"terms\": {\"field\": \"id.resp_h\"}}}}'"
-    # elif queryname == "search id.orig_h + sum orig_bytes":
-    #     query = "curl -X GET \"localhost:9200/test/_search?format=json&pretty\" -H 'Content-Type: application/json' -d'{\"query\" : {\"term\" : { \"id.orig_h\" : \""+ arguments[0] +"\" }}, \"aggs\": {\"orig_bytes\": {\"sum\": {\"field\": \"orig_bytes\"}}}}'"
-    # elif queryname == "search id.orig_h + count by schema":
-    #     query = "curl -X GET \"localhost:9200/test/_search?format=json&pretty\" -H 'Content-Type: application/json' -d'{\"query\" : {\"term\" : { \"id.orig_h\" : \""+ arguments[0] +"\" }}, \"aggs\": {\"schema\": {\"terms\": {\"field\": \"_path\"}}}}'"
-    # elif queryname == "search id.orig_h + sort ts":
-    #     query = "curl -X GET \"localhost:9200/test/_search?format=json&pretty\" -H 'Content-Type: application/json' -d'{\"sort\" : [\"ts\" ],\"query\" : {\"term\" : { \"id.orig_h\" : \""+arguments[0]+"\" }}}'"
+        query = "curl -X GET \"localhost:9200/test/_search?scroll=1m&pretty\" -H 'Content-Type: application/json' -d'{\"size\": 1000,\"sort\" : [{\"ts\" : {\"order\": \"asc\" }}],\"query\" : {\"term\" : { \"id.orig_h\" : \""+arguments[0]+"\" }}}'"
+    elif queryname == "analytics avg field":
+        query = "curl -X GET \"localhost:9200/test/_search?scroll=1m&pretty\" -H 'Content-Type: application/json' -d'{\"aggs\": {\"avg_field\": {\"avg\": { \"field\": \""+arguments[0]+"\"}}}}'"
     else:
         query= ""
     return query
@@ -63,13 +54,12 @@ def issueQueries():
     took_list = []
     query_name_list = []
     argument_list = []
-    validation_list =[]
+    avg_list =[]
+    hits_list =[]
     real_list=[]
-    if queryname == "search id.orig_h":
-	     sortval_list=[]
+    port_list =[]
 
     restartElastic()
-
 
     with open(input_directory + workload_file ) as f:
         data = ndjson.load(f)
@@ -79,36 +69,16 @@ def issueQueries():
                 queryname = d['query']
                 query = getQuery(queryname, d['arguments'], 0)
                 if query:
-                    if queryname in aggregation_fields:
-                        prepForAggregation(aggregation_fields[queryname])
 
                     queryoutput = runQuery(query, queryname)
-                    
-                    if queryname == "search id.orig_h":
-	                    sortval = queryoutput['sortval']
-	                    indiv_hits = queryoutput['hits']
-
-	                    while indiv_hits >= 10000 and sortval:
-	                        sa_query = getQuery(queryname, d['arguments'], sortval)
-	                        curr_queryoutput = runQuery(sa_query, queryname)
-	                    
-	                        queryoutput["executiontime"] = queryoutput["executiontime"] + curr_queryoutput["executiontime"]
-	                        queryoutput["hits"] = queryoutput["hits"] + curr_queryoutput["hits"]
-	                        queryoutput["sortval"] = curr_queryoutput["sortval"]
-	                    
-	                        sortval = curr_queryoutput["sortval"]
-	                        indiv_hits = curr_queryoutput["hits"]
 
                     took_list.append(queryoutput['executiontime'])
                     query_name_list.append(d['query'])
                     argument_list.append(d['arguments'])
-                    validation_list.append(queryoutput["avg"])
+                    avg_list.append(queryoutput["avg"])
+                    hits_list.append(queryoutput["hits"])
+                    port_list.append(queryoutput["last_port"])
 
-                    if queryname == "search id.orig_h":
-                    	sortval_list.append(queryoutput["sortval"])
-
-                    if queryname in aggregation_fields:
-                        cleanFromAggregation(aggregation_fields[queryname])
                 else:
                     print('Query Not Supported: ' + str(d['query']))
             else:
@@ -130,12 +100,14 @@ def issueQueries():
     output_df.insert(6, 'user', [np.nan] * num_queries)
     output_df.insert(7, 'sys',[np.nan] * num_queries)
     output_df.insert(8, 'argument_0', argument_list)
-    output_df.insert(9, 'validation', validation_list)
-    output_df.insert(10, 'instance', ["m5.large"] * num_queries)
+    if any(avg_list):
+        output_df.insert(9, 'validation', avg_list)
+    elif any(port_list):
+        output_df.insert(9, 'validation', port_list)
+    else:
+        output_df.insert(9, 'validation', hits_list)
+    output_df.insert(10, 'instance', ["m5d.2xlarge"] * num_queries)
     output_df.insert(11,'took', took_list)
-    #output_df.insert(11, 'sortval', sortval_list)
-
-
 
     output_df.to_csv(output_directory + output_file, na_rep='NaN')
     return output_df
