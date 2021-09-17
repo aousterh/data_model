@@ -42,11 +42,11 @@ object EndtoEnd {
       } yield df
 
       // issue the query
-      val search_results = dfs.map(df => df.filter(col("id.orig_h") === ip))
-
-      // write the results out as parquet, to ensure the query actually executed
-      for (df <- search_results)
-        df.write.mode("append").parquet(OUTPUT_PATH)
+      val search_results = for {
+        df <- dfs
+        val df_filtered = df.filter(col("id.orig_h") === ip)
+        if df_filtered.count() > 0
+      } yield df_filtered
 
       return search_results
     }
@@ -103,9 +103,6 @@ object EndtoEnd {
         // just sort and return first 1000
         val search_df = search_dfs(0).orderBy("ts").limit(1000).toDF()
 
-        // write the results out as parquet, to ensure the query actually executed
-        search_df.write.mode("append").parquet(OUTPUT_PATH)
-
         return List(search_df)
       }
 
@@ -117,9 +114,6 @@ object EndtoEnd {
         .orderBy("ts")
         .limit(1000)
         .toDF()
-
-      // write the results out as parquet, to ensure the query actually executed
-      search_df.write.mode("append").parquet(OUTPUT_PATH)
 
       return List(search_df)
     }
@@ -158,9 +152,6 @@ object EndtoEnd {
         .reduce(_.union(_))
         .agg(sum("sum").as("sum"))
 
-      // write the results out as parquet, to ensure the query actually executed
-      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
-
       return List(analytics_df)
     }
 
@@ -191,9 +182,6 @@ object EndtoEnd {
         .reduce(_.union(_))
         .agg(avg(agg_column.stripPrefix("id.")).as("avg"))
 
-      // write the results out as parquet, to ensure the query actually executed
-      analytics_df.write.mode("append").parquet(OUTPUT_PATH)
-
       return List(analytics_df)
     }
 
@@ -208,9 +196,10 @@ object EndtoEnd {
   }
 
   // array of (trace_file, query class) tuples
-  val workloads = Array(("../../workload/trace/network_log_80_million_search_100.ndjson", new SearchQuery()),
-    ("../../workload/trace/network_log_80_million_search_100.ndjson", new SearchSortHeadQuery()),
-    ("../../workload/trace/network_log_80_million_analytics_avg_100_omit_version.ndjson", new AnalyticsAvgQuery()))
+  val workloads = Array(("../../workload/trace/network_log_80_million_analytics_avg_100_omit_version.ndjson", new AnalyticsAvgQuery()),
+    ("../../workload/trace/network_log_80_million_search_100.ndjson", new SearchQuery()),
+    ("../../workload/trace/network_log_80_million_search_100.ndjson", new SearchSortHeadQuery()))
+
 
     /*("../../workload/trace/network_log_search_needles_30.ndjson", new SearchQuery()),
     //("../../workload/trace/network_log_analytics_30.ndjson", new AnalyticsSumOrigBytesQuery())
@@ -253,7 +242,6 @@ object EndtoEnd {
       // run the query
       val before = System.nanoTime
       val result_dataframes = query.run(spark, files, Array(arg0, arg1))
-//      result_dataframes.map(df => df.collect())
       val runtime = (System.nanoTime - before) / 1e9d
 
       val validation = query.get_validation(result_dataframes)
