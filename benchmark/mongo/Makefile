@@ -2,6 +2,7 @@
 DB := zed
 COL := zeek  # comment out to use multiple collections
 CONFIG := default
+MONGO_PATH := /local/zeek-data-all/subset_80_million/.mongo
 
 # Steps:
 # i. Run mongod: make start
@@ -22,8 +23,8 @@ install:
 stop:
 	pkill mongod || true
 start:
-	mkdir .mongo || true
-	mongod --dbpath .mongo > /dev/null 2>&1 &
+	mkdir $(MONGO_PATH) || true
+	mongod --dbpath $(MONGO_PATH) > /dev/null 2>&1 &
 load:
 	DB=$(DB) COL=$(COL) ./load.py
 run:

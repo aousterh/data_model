@@ -3,9 +3,9 @@ version: 4.2
 meta:
   warmup: false
   num_run: 1
-  num_thread: 4
+  num_thread: 8
   seed: 42
-  instance: m5.xlarge
+  instance: m5d.2xlarge
 benchmark:
   network_log_analytics: [ "avg" ]
   network_log_search: [ "search" , "search_no_index",
