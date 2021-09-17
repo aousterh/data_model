@@ -160,7 +160,7 @@ def setup_lake_hack():
             index_rule_id = m.groups()[0]
 
     # get object IDs
-    obj_file_names = glob.glob("{}/1y0*/data/*-seek.zng".format(LOG_DIR))
+    obj_file_names = glob.glob("{}/1y*/data/*-seek.zng".format(LOG_DIR))
     ids = []
     for f in obj_file_names:
         m = re.search(r"data/(.*)-seek.zng", f)
@@ -171,12 +171,13 @@ def setup_lake_hack():
     for i in ids:
         os.system("zed lake index apply -p p1 TEST {}".format(i))
 
+    print("ids: {}".format(ids))
     # generate plain ZST data using same chunks
     os.system("rm -fr {}/zst/*".format(DATA))
     for i in ids:
-        if m is not None:
-            zng_file = "{}/1y0*/data/{}.zng".format(LOG_DIR, i)
-            zst_file = "{}/zst/{}.zst".format(DATA, i)
+        zng_file = "{}/1y*/data/{}.zng".format(LOG_DIR, i)
+        zst_file = "{}/zst/{}.zst".format(DATA, i)
+        print("generating {} from {}".format(zst_file, zng_file))
         os.system("zq -f zst -validate=false -o {} {}".format(zst_file, zng_file))
 
 def run_benchmark(query_description, f_input, f_output=sys.stdout,
