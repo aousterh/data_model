@@ -27,12 +27,12 @@ sizes_csv = "{}/sizes.csv".format(results_dir)
 zed_queries = [#("by typeof(.) | count()", "by typeof count"),
                ("count()", "count"),
                ("sum(value)", "sum")]
-zed_formats = ["zng", "zst"]
+zed_formats = ["zng"] #, "zst"]
 all_formats = zed_formats + ["zson", "ndjson", "parquet"]
 
 # fuse exhausts all the memory with about 4,000 types
-max_zed_fused_types = 3 * 1000
-max_parquet_fused_types = 5 * 1000
+max_zed_fused_types = max_types
+max_parquet_fused_types = max_types
 
 # enum for different ways of organizing data across files
 class Org(Enum):
@@ -81,6 +81,7 @@ def make_dirs(type_range):
             os.system("mkdir {}".format(org.org_dir(n_types)))
 
 def create_zed_data(type_range):
+    print("creating zed data")
     # ZSON file handles
     zson_files = {}
 
@@ -90,6 +91,7 @@ def create_zed_data(type_range):
 
     # generate data as ZSON - records in different files have the same values
     # but vary field names to create different numbers of types per file
+    print("creating zed data (ZSON)")
     for i in range(n_records):
         letter = random.choice(string.ascii_letters)
         value = random.randint(0, 1000)
@@ -103,6 +105,7 @@ def create_zed_data(type_range):
         f.close()
 
     # create ZNG, ZST, and NDJSON files from ZSON
+    print("creating zed data (ZNG, ZST, NDJSON)")
     for n_types in type_range:
         for zed_format in zed_formats:
             # regular version
@@ -121,21 +124,23 @@ def create_zed_data(type_range):
             default_file(n_types, "ndjson"), default_file(n_types, "zson")))
 
     # create files with a single type per file
+    print("creating zed data (siloed)")
     for n_types in type_range:
         for i in range(n_types):
             for zed_format in zed_formats:
                 input_file = default_file(n_types, zed_format)
                 t_name = type_name(i, n_types)
                 siloed_file_name = siloed_file(n_types, i, zed_format)
-                os.system("zq -i {} -f {} -o {} 'has({})' {}".format(zed_format, zed_format, siloed_file_name,
-                                                               t_name, input_file))
+                os.system("zq -validate=false -i {} -f {} -o {} 'has({})' {}"
+                          .format(zed_format, zed_format, siloed_file_name, t_name, input_file))
 
             # convert to NDJSON
             ndjson_file = siloed_file(n_types, i, "ndjson")
-            os.system("zq -f ndjson -o {} {}".format(
+            os.system("zq -validate=false -f ndjson -o {} {}".format(
                 ndjson_file, siloed_file(n_types, i, zed_formats[0])))
 
 def bench_zed(type_range):
+    print("benchmarking zed data")
     # benchmark some queries over each file
     with open(results_csv, "a") as f_results:
         for n_types in type_range:
@@ -157,8 +162,9 @@ def bench_zed(type_range):
                 for query, description in zed_queries:
                     flush_buffer_cache()
 
-                    results = unix_time_bash("zq -i {} -z \"{}\" {}".format(
-                        zed_format, query, file_name), stdout=subprocess.PIPE)
+                    cmd = "zq -i {} -z -validate=false \"{}\" {}".format(zed_format, query, file_name)
+                    print("running cmd: {}".format(cmd))
+                    results = unix_time_bash(cmd, stdout=subprocess.PIPE)
                     return_val = re.search(r"{(.*):(\d*)", results['return']).groups()[1]
                     fields = [zed_format, organization.value, description,
                               n_types, results['real'], results['user'],
@@ -168,10 +174,12 @@ def bench_zed(type_range):
                     f_results.write(",".join(str(x) for x in fields) + "\n")
 
 def create_parquet_data(type_range):
+    print("creating parquet data")
     spark = SparkSession.builder.master("local[1]").config("spark.executor.memory", "4g").getOrCreate()
 
     # convert NDJSON to Parquet
     for n_types in type_range:
+        print("creating parquet data with {} types".format(n_types))
         if n_types <= max_parquet_fused_types:
             # merges all types into a single fused schema
             df = spark.read.json(default_file(n_types, "ndjson"))
@@ -211,6 +219,7 @@ spark_queries = [(query_count, "count", Org.FUSED),
                  (query_sum_siloed, "sum", Org.SILOED)]
 
 def bench_parquet(type_range):
+    print("benchmarking parquet data")
     spark = SparkSession.builder.master("local[1]").config("spark.executor.memory", "4g").getOrCreate()
 
     with open(results_csv, "a") as f_results:
@@ -238,6 +247,7 @@ def bench_parquet(type_range):
                 f_results.flush()
 
 def get_file_sizes(type_range):
+    print("measuring file sizes")
     with open(sizes_csv, "w") as f_sizes:
         f_sizes.write("format,organization,n_types,size\n")
 
