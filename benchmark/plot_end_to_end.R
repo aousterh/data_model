@@ -27,8 +27,8 @@ data$system_label = ifelse(data$system == "zed", "Zed",
 	      ifelse(data$system == "spark", "Spark",
 	      ifelse(data$system == "Elastic", "Elastic\nSearch", "unknown")))))
 
-# drop first 5 data points and summarize with mean
-data_skip_warmup = data[data$index >= 5,]
+# drop first 10 data points
+data_skip_warmup = data[data$index >= 10,]
 
 
 ggplot(data, aes(x=index, y=real, color=interaction(system, in_format))) +
@@ -47,7 +47,7 @@ ggplot(data, aes(x=index, y=real, color=interaction(system, in_format))) +
 	     labs(x="Query Number", y="Query Time (s)") +
 	     scale_color_discrete(name="System.Format") +
 	     facet_grid(. ~ query) +
-	     coord_cartesian(ylim=c(0, 2.2))
+	     coord_cartesian(ylim=c(0, 60))
 
 ggsave("query_time_by_index_zoom.pdf", width=8, height=5)
 
@@ -62,14 +62,14 @@ ggplot(data, aes(x=index, y=validation, color=interaction(system, in_format))) +
 ggsave("validation.pdf", width=8, height=5)
 
 
-# drop first 5 data points
-data_skip_warmup = data[data$index >= 5,]
+# drop first 10 data points
+data_skip_warmup = data[data$index >= 10,]
 
 ggplot(data_skip_warmup, aes(x=interaction(system, in_format), y=real, color=system)) +
 	     geom_boxplot() +
 	     labs(x="System.Format", y="Query Time (s)") +
 	     scale_color_discrete(name="System") +
-	     coord_cartesian(ylim=c(0,12)) +
+	#     coord_cartesian(ylim=c(0,12)) +
 	     facet_grid(. ~ query) +
 	     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
@@ -137,7 +137,10 @@ tapply(data$validation, data$query, summary)
 tapply(data$real, interaction(data$system, data$in_format, data$query), summary)
 
 
-
+Y_MAX = max(data_skip_warmup$real)
+Y_MAX = 25
+PDF_WIDTH=3.2
+PDF_HEIGHT=3
 
 
 # only show the best version of each system
@@ -146,16 +149,18 @@ search_subset <- search_skip_warmup[search_skip_warmup$in_format != "bson" &
 	      search_skip_warmup$in_format != "zng" &
 	      search_skip_warmup$in_format != "table",]
 
-sys_colors=c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854")
+#sys_colors=c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854")
+sys_colors=c("#1b7838", "#762a83", "#377eb8", "#e41a1c", "#ff7f00") # orange is last
 ggplot(search_subset, aes(x=system_label, y=real, color=system)) +
 	     geom_boxplot() +
 	     labs(x="System", y="Query Time (s)") +
 	     scale_color_manual(values=sys_colors) +
-	     coord_cartesian(ylim=c(0,11)) +
+	     coord_cartesian(ylim=c(0,Y_MAX)) +
 	     theme(legend.position="none")
 
-ggsave("boxplot_search.pdf", width=4, height=4)
+ggsave("boxplot_search.pdf", width=PDF_WIDTH, height=PDF_HEIGHT)
 
+#tapply(search_subset$real, search_subset$system, summary)
 
 
 search_sort_skip_warmup = data_skip_warmup[data_skip_warmup$query == "search sort head id.orig_h",]
@@ -168,10 +173,12 @@ ggplot(search_sort_subset, aes(x=system_label, y=real, color=system)) +
 	     geom_boxplot() +
 	     labs(x="System", y="Query Time (s)") +
 	     scale_color_manual(values=sys_colors) +
-	     coord_cartesian(ylim=c(0,11)) +
+	     coord_cartesian(ylim=c(0,Y_MAX)) +
 	     theme(legend.position="none")
 
-ggsave("boxplot_search_sort.pdf", width=4, height=4)
+ggsave("boxplot_search_sort.pdf", width=PDF_WIDTH, height=PDF_HEIGHT)
+
+#tapply(search_sort_subset$real, search_sort_subset$system, summary)
 
 
 
@@ -184,7 +191,12 @@ ggplot(analytics_subset, aes(x=system_label, y=real, color=system)) +
 	     geom_boxplot() +
 	     labs(x="System", y="Query Time (s)") +
 	     scale_color_manual(values=sys_colors) +
-	     coord_cartesian(ylim=c(0,11)) +
+	     coord_cartesian(ylim=c(0,Y_MAX)) +
 	     theme(legend.position="none")
 
-ggsave("boxplot_analytics.pdf", width=4, height=4)
+ggsave("boxplot_analytics.pdf", width=PDF_WIDTH, height=PDF_HEIGHT)
+
+#tapply(analytics_subset$real, analytics_subset$system, summary)
+
+
+tapply(data_skip_warmup$real, interaction(data_skip_warmup$system, data_skip_warmup$in_format, data_skip_warmup$query), summary)
