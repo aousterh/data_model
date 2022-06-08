@@ -17,6 +17,7 @@ from util import *
 BASE_DIR = "/local/zeek-data-all/subset_80_million"
 DATA = BASE_DIR + "/z"
 LOG_DIR = "{}/logs".format(BASE_DIR)
+LAKE_DATA_DIR = "{}/2A*/data".format(LOG_DIR)
 RESULTS_CSV = "end_to_end_zed.csv"
 config = None
 meta = None
@@ -51,10 +52,7 @@ class SearchQuery(Query):
     def get_flags(self, args, input_format):
         assert(len(args) == 1)
 
-        if input_format == "lake" and meta.get("search_flag", False):
-            return "-search {}:{}".format(index_rule_id, args[0])
-        else:
-            return ""
+        return ""
 
     def get_validation(self, results):
         return len(results.rstrip("\n").split("\n"))
@@ -70,11 +68,8 @@ class SearchSortHeadQuery(Query):
     def get_flags(self, args, input_format):
         assert(len(args) == 1)
 
-        if input_format == "lake" and meta.get("search_flag", False):
-            return "-search {}:{}".format(index_rule_id, args[0])
-        else:
-            return ""
-    
+        return ""
+
     def get_validation(self, results):
         l = results.rstrip("\n").split("\n")[-1]
         return re.search(r"orig_p:(\d*)\(port", l).groups()[0]
@@ -135,24 +130,24 @@ def create_lake():
         shutil.rmtree(log_dir)
     os.mkdir(log_dir)
 
-    os.environ["ZED_LAKE_ROOT"] = log_dir
-    os.system("zed lake init")
+    os.environ["ZED_LAKE"] = log_dir
+    os.system("zed init")
 
 def setup_lake():
     create_lake()
 
-    os.system("zed lake create -p p1")
-    os.system("zed lake load -p p1 {}".format(data_path("zng", True)))
+    os.system("zed create p1")
+    os.system("zed load -use p1 {}".format(data_path("zng", True)))
 
 def setup_lake_hack():
     global index_rule_id
     create_lake()
 
-    os.system("zed lake create -p p1")
-    os.system("zed lake load -p p1 {}".format(data_path("zng", True)))
+    os.system("zed create p1")
+    os.system("zed load -use p1 {}".format(data_path("zng", True)))
 
     # create index and get ID
-    results = os.popen("zed lake index create TEST field id.orig_h").read()
+    results = os.popen("zed index create TEST field id.orig_h").read()
     index_rule_id = None
     for l in results.split("\n"):
         m = re.search(r"\s*rule (.*) field ", l)
@@ -160,7 +155,7 @@ def setup_lake_hack():
             index_rule_id = m.groups()[0]
 
     # get object IDs
-    obj_file_names = glob.glob("{}/1y*/data/*-seek.zng".format(LOG_DIR))
+    obj_file_names = glob.glob(LAKE_DATA_DIR + "/*-seek.zng")
     ids = []
     for f in obj_file_names:
         m = re.search(r"data/(.*)-seek.zng", f)
@@ -169,13 +164,13 @@ def setup_lake_hack():
 
     # apply index to objects
     for i in ids:
-        os.system("zed lake index apply -p p1 TEST {}".format(i))
+        os.system("zed index apply -use p1 TEST {}".format(i))
 
     print("ids: {}".format(ids))
     # generate plain ZST data using same chunks
     os.system("rm -fr {}/zst/*".format(DATA))
     for i in ids:
-        zng_file = "{}/1y*/data/{}.zng".format(LOG_DIR, i)
+        zng_file = LAKE_DATA_DIR + "/{}.zng".format(i)
         zst_file = "{}/zst/{}.zst".format(DATA, i)
         print("generating {} from {}".format(zst_file, zng_file))
         os.system("zq -f zst -validate=false -o {} {}".format(zst_file, zng_file))
