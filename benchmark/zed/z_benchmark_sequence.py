@@ -121,8 +121,16 @@ def data_path(fmt, data_load=False):
     else:
         return "{}/{}/*".format(DATA, fmt)
 
-zq_cmd = "zq -validate=false -i {} {} \"{}\" {}"
-zed_lake_cmd = "zed lake query {} \"from p1 {} | {}\""
+def cores_restriction():
+    cores_mask = meta.get("cores_mask")
+    if cores_mask:
+        return "taskset -c {}".format(cores_mask)
+    else:
+        return ""
+
+zq_cmd = "{} zq -validate=false -i {} {} \"{}\" {}"
+zed_cut_cmd = "{} zed dev zst cut -k {} {} | {} zq -z \"{}\" -"
+zed_lake_cmd = "{} zed query {} \"from p1 {} | {}\""
 
 def create_lake():
     log_dir = os.path.join(os.getcwd(), LOG_DIR)
@@ -201,13 +209,20 @@ def run_benchmark(query_description, f_input, f_output=sys.stdout,
 
         flags_str = " ".join(flags)
 
-        if input_fmt == "lake" or input_fmt == "zng":
-            # issue both using lake
+        if input_fmt == "lake":
+            # issue using lake
             query_range = query.get_range(args)
-            cmd = zed_lake_cmd.format(flags_str, query_range, zq_query)
+            cmd = zed_lake_cmd.format(cores_restriction(), flags_str,
+                                      query_range, zq_query)
+        elif input_fmt == "zst" and meta.get("zst_cutter_flag", False) == "dev":
+            # issue over zst
+            cmd = zed_cut_cmd.format(cores_restriction(), *args,
+                                     data_path(input_fmt), cores_restriction(),
+                                     zq_query)
         else:
-            cmd = zq_cmd.format(input_fmt, flags_str, zq_query,
-                                data_path(input_fmt))
+            # issue using zq
+            cmd = zq_cmd.format(cores_restriction(), input_fmt, flags_str,
+                                zq_query, data_path(input_fmt))
         query_time = time.time()
 
         print("running cmd: {}".format(cmd))

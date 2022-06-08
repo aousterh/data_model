@@ -5,6 +5,7 @@ meta:
   input_one_file: false
   zst_cutter_flag: true
   search_flag: true
+  cores_mask: 1
 benchmark:
   network_log_search: [ "search", "search_sort_head" ]
   network_log_analytics: [ "avg" ] #"range_sum"
