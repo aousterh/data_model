@@ -1,0 +1,8 @@
+name: duckdb
+version: v0.3.4 662041e2b
+meta:
+  instance: m5.xlarge
+  cores_mask: 1
+benchmark:
+#  network_log_search: [ "search", "search_sort_head" ]
+  network_log_analytics: [ "avg" ]
